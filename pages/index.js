@@ -20,6 +20,42 @@ const FALLBACK_DEDUCTIBLES = [
   { min: 500000.01, max: Infinity, deductible: 'quote' }
 ];
 
+// Fallback категории (новые 32 категории)
+const FALLBACK_CATEGORIES = [
+  'Automotive Parts & Accessories',
+  'Aviation & Aerospace Equipment',
+  'Battery Cells & Modules',
+  'Chemicals & Consumables',
+  'Construction Vehicles (Off-Road)',
+  'Electrical & Control Components',
+  'Electrical & Electronic Equipment',
+  'Electronics & Consumer Goods',
+  'Energy Storage Systems',
+  'EV Charging Systems',
+  'Food & Agricultural Products',
+  'Foodservice & Kitchen Equipment',
+  'Furniture & Home Goods',
+  'Heavy Machinery & Construction Equipment',
+  'Industrial Machinery & Manufacturing Equipment',
+  'Machine Parts & Accessories',
+  'Marine Vessels & Equipment',
+  'Medical & Laboratory Equipment',
+  'Metals & Raw Materials',
+  'Military & Defense Equipment',
+  'Miscellaneous & Consumables',
+  'Miscellaneous General Cargo',
+  'Oilfield & Mining Equipment',
+  'Packaging & Logistics',
+  'Packaging & Paper Products',
+  'Power Generation & Energy Equipment',
+  'Renewable Energy Equipment',
+  'Textiles & Apparel',
+  'Tools & Workshop Equipment',
+  'Trade Show & Display Equipment',
+  'Vehicles (Road)',
+  'Wood & Building Materials'
+];
+
 const COVERAGE_DESCRIPTIONS = {
   'All Risk': {
     text: 'All Risk coverage offers the broadest protection for cargo during transit. It covers physical loss or damage caused by ',
@@ -264,8 +300,11 @@ export default function FreightInsuranceCalculator() {
   const [coverageType, setCoverageType] = useState('');
   const [coverageFor, setCoverageFor] = useState('');
   const [cargoValue, setCargoValue] = useState('');
+  const [cargoValueDisplay, setCargoValueDisplay] = useState('');
   const [additionalValue, setAdditionalValue] = useState('');
+  const [additionalValueDisplay, setAdditionalValueDisplay] = useState('');
   const [carrierInsurance, setCarrierInsurance] = useState('');
+  const [carrierInsuranceDisplay, setCarrierInsuranceDisplay] = useState('');
   const [quote, setQuote] = useState(null);
   const [errors, setErrors] = useState({});
   const [isCalculating, setIsCalculating] = useState(false);
@@ -277,11 +316,48 @@ export default function FreightInsuranceCalculator() {
   const [categoriesList, setCategoriesList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Форматирование числа с разделителями
+  const formatNumberWithCommas = (value) => {
+    if (!value) return '';
+    const num = value.toString().replace(/[^0-9]/g, '');
+    return num.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  };
+
+  // Парсинг числа из строки с разделителями
+  const parseNumberFromDisplay = (value) => {
+    return value.replace(/[^0-9]/g, '');
+  };
+
+  // Обработчик изменения Cargo Value
+  const handleCargoValueChange = (e) => {
+    const rawValue = parseNumberFromDisplay(e.target.value);
+    setCargoValue(rawValue);
+    setCargoValueDisplay(formatNumberWithCommas(rawValue));
+    setErrors({...errors, cargoValue: null});
+  };
+
+  // Обработчик изменения Additional Value
+  const handleAdditionalValueChange = (e) => {
+    const rawValue = parseNumberFromDisplay(e.target.value);
+    setAdditionalValue(rawValue);
+    setAdditionalValueDisplay(formatNumberWithCommas(rawValue));
+    setErrors({...errors, additionalValue: null});
+  };
+
+  // Обработчик изменения Carrier Insurance
+  const handleCarrierInsuranceChange = (e) => {
+    const rawValue = parseNumberFromDisplay(e.target.value);
+    setCarrierInsurance(rawValue);
+    setCarrierInsuranceDisplay(formatNumberWithCommas(rawValue));
+    setErrors({...errors, carrierInsurance: null});
+  };
+
   // Загрузка данных из Supabase
   useEffect(() => {
     async function loadData() {
       if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
         console.log('Supabase not configured, using fallback data');
+        setCategoriesList(FALLBACK_CATEGORIES);
         setIsLoading(false);
         return;
       }
@@ -336,11 +412,18 @@ export default function FreightInsuranceCalculator() {
         
         if (categoriesResponse.ok) {
           const categories = await categoriesResponse.json();
-          setCategoriesList(categories.map(c => c.name));
+          if (categories.length > 0) {
+            setCategoriesList(categories.map(c => c.name));
+          } else {
+            setCategoriesList(FALLBACK_CATEGORIES);
+          }
+        } else {
+          setCategoriesList(FALLBACK_CATEGORIES);
         }
 
       } catch (error) {
         console.error('Error loading data from Supabase:', error);
+        setCategoriesList(FALLBACK_CATEGORIES);
       }
       
       setIsLoading(false);
@@ -352,7 +435,7 @@ export default function FreightInsuranceCalculator() {
   // Используем данные из БД или fallback
   const rates = ratesData || FALLBACK_RATES;
   const deductibles = deductiblesData || FALLBACK_DEDUCTIBLES;
-  const categories = categoriesList.length > 0 ? categoriesList : ['Electronics', 'Machinery', 'Textiles', 'Food & Beverages', 'Chemicals', 'Furniture', 'Auto Parts', 'Other'];
+  const categories = categoriesList.length > 0 ? categoriesList : FALLBACK_CATEGORIES;
 
   // Auto-calculate cargo value when additional coverage is selected
   useEffect(() => {
@@ -360,7 +443,9 @@ export default function FreightInsuranceCalculator() {
       const additional = parseFloat(additionalValue) || 0;
       const carrier = parseFloat(carrierInsurance) || 0;
       if (additional > 0 || carrier > 0) {
-        setCargoValue((additional + carrier).toString());
+        const total = (additional + carrier).toString();
+        setCargoValue(total);
+        setCargoValueDisplay(formatNumberWithCommas(total));
       }
     }
   }, [additionalValue, carrierInsurance, coverageFor]);
@@ -459,8 +544,11 @@ export default function FreightInsuranceCalculator() {
     setCoverageType('');
     setCoverageFor('');
     setCargoValue('');
+    setCargoValueDisplay('');
     setAdditionalValue('');
+    setAdditionalValueDisplay('');
     setCarrierInsurance('');
+    setCarrierInsuranceDisplay('');
     setQuote(null);
     setErrors({});
   };
@@ -494,7 +582,7 @@ export default function FreightInsuranceCalculator() {
       {/* Excluded Commodities Popup */}
       <ExcludedCommoditiesPopup isOpen={showExcluded} onClose={() => setShowExcluded(false)} />
 
-      {/* Header */}
+      {/* Header with FreightInsuranceDirect Logo */}
       <div style={{
         maxWidth: '900px',
         margin: '0 auto 30px',
@@ -508,28 +596,70 @@ export default function FreightInsuranceCalculator() {
           marginBottom: '10px',
           flexWrap: 'wrap'
         }}>
-          <img 
-            src="https://ramonins-usa.com/wp-content/uploads/2016/10/logo-ramon.png" 
-            alt="Ramon Insurance"
-            style={{ height: '50px' }}
-          />
+          {/* Truck Icon */}
           <div style={{
-            background: 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%)',
-            padding: '8px 14px',
+            width: '50px',
+            height: '50px',
+            background: 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)',
+            borderRadius: '50%',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(220, 38, 38, 0.3)'
+          }}>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+              <rect x="1" y="3" width="15" height="13" rx="2"/>
+              <path d="M16 8h4l3 3v5h-7V8z"/>
+              <circle cx="5.5" cy="18.5" r="2.5"/>
+              <circle cx="18.5" cy="18.5" r="2.5"/>
+            </svg>
+          </div>
+          
+          {/* Logo Text */}
+          <div>
+            <h1 style={{
+              fontSize: '28px',
+              fontWeight: '700',
+              margin: 0,
+              letterSpacing: '-0.5px'
+            }}>
+              <span style={{ color: '#1e293b' }}>Freight</span>
+              <span style={{ color: '#1e293b' }}>Insurance</span>
+              <span style={{ color: '#ea580c' }}>Direct</span>
+              <span style={{ fontSize: '14px', verticalAlign: 'super', color: '#64748b' }}>®</span>
+            </h1>
+            <div style={{
+              height: '3px',
+              background: 'linear-gradient(90deg, #ea580c 0%, #f97316 50%, #fbbf24 100%)',
+              borderRadius: '2px',
+              marginTop: '4px'
+            }}></div>
+            <p style={{ margin: '6px 0 0', fontSize: '14px', color: '#64748b', letterSpacing: '1px' }}>
+              RAMON INC. • SINCE 1982
+            </p>
+          </div>
+          
+          {/* Trusted Badge */}
+          <div style={{
+            background: 'linear-gradient(135deg, #78350f 0%, #a16207 100%)',
+            padding: '10px 14px',
             borderRadius: '8px',
             fontSize: '11px',
-            fontWeight: '600',
+            fontWeight: '700',
             textAlign: 'center',
-            color: '#fff'
+            border: '2px solid #ca8a04',
+            boxShadow: '0 4px 12px rgba(161, 98, 7, 0.3)'
           }}>
-            <div style={{ color: '#fbbf24' }}>TRUSTED</div>
-            <div style={{ fontSize: '10px' }}>SINCE 1982</div>
+            <div style={{ color: '#fde047', letterSpacing: '1px' }}>TRUSTED</div>
+            <div style={{ color: '#fef3c7', fontSize: '13px' }}>SINCE</div>
+            <div style={{ color: '#fde047', fontSize: '16px' }}>1982</div>
           </div>
         </div>
+        
         <h2 style={{
           fontSize: '32px',
           fontWeight: '600',
-          margin: '20px 0 10px',
+          margin: '25px 0 10px',
           color: '#1e3a5f'
         }}>Cargo Insurance Calculator</h2>
         <p style={{ color: '#64748b', margin: 0 }}>Get an instant quote for your freight insurance needs</p>
@@ -692,7 +822,9 @@ export default function FreightInsuranceCalculator() {
                       setErrors({...errors, coverageFor: null});
                       if (type === 'Full Value') {
                         setAdditionalValue('');
+                        setAdditionalValueDisplay('');
                         setCarrierInsurance('');
+                        setCarrierInsuranceDisplay('');
                       }
                     }}
                     style={{
@@ -738,9 +870,9 @@ export default function FreightInsuranceCalculator() {
                   fontWeight: '600'
                 }}>$</span>
                 <input
-                  type="number"
-                  value={cargoValue}
-                  onChange={(e) => { setCargoValue(e.target.value); setErrors({...errors, cargoValue: null}); }}
+                  type="text"
+                  value={cargoValueDisplay}
+                  onChange={handleCargoValueChange}
                   placeholder="0"
                   readOnly={coverageFor === 'Additional'}
                   style={{
@@ -777,9 +909,9 @@ export default function FreightInsuranceCalculator() {
                       fontSize: '16px'
                     }}>$</span>
                     <input
-                      type="number"
-                      value={additionalValue}
-                      onChange={(e) => { setAdditionalValue(e.target.value); setErrors({...errors, additionalValue: null}); }}
+                      type="text"
+                      value={additionalValueDisplay}
+                      onChange={handleAdditionalValueChange}
                       placeholder="0"
                       style={{
                         width: '100%',
@@ -811,9 +943,9 @@ export default function FreightInsuranceCalculator() {
                       fontSize: '16px'
                     }}>$</span>
                     <input
-                      type="number"
-                      value={carrierInsurance}
-                      onChange={(e) => { setCarrierInsurance(e.target.value); setErrors({...errors, carrierInsurance: null}); }}
+                      type="text"
+                      value={carrierInsuranceDisplay}
+                      onChange={handleCarrierInsuranceChange}
                       placeholder="0"
                       style={{
                         width: '100%',
@@ -1089,14 +1221,6 @@ export default function FreightInsuranceCalculator() {
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
-        }
-        input::-webkit-outer-spin-button,
-        input::-webkit-inner-spin-button {
-          -webkit-appearance: none;
-          margin: 0;
-        }
-        input[type=number] {
-          -moz-appearance: textfield;
         }
         * {
           box-sizing: border-box;
