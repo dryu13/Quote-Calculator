@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 
-// Конфигурация Supabase - будет браться из environment variables
+// Конфигурация Supabase
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-// Fallback данные (используются если БД недоступна)
+// Fallback данные
 const FALLBACK_RATES = {
   Land: { 'All Risk': { additional: 0.0011, fullValue: 0.00115, minimum: 75 }, 'Total Loss': { additional: 0.0011, fullValue: 0.00115, minimum: 75 } },
   Air: { 'All Risk': { additional: 0.002, fullValue: 0.002, minimum: 75 }, 'Total Loss': { additional: 0.002, fullValue: 0.002, minimum: 75 } },
@@ -21,11 +21,241 @@ const FALLBACK_DEDUCTIBLES = [
 ];
 
 const COVERAGE_DESCRIPTIONS = {
-  'All Risk': 'All Risk coverage offers the broadest protection for cargo during transit. It covers physical loss or damage caused by physical external causes, including partial or total loss, small or big damage or loss, theft, and catastrophic events. This is the highest coverage on any freight insurance policy. Coverage applies from the point the goods begin transit through final delivery, including loading and unloading.',
-  'Total Loss': 'Total Loss coverage protects against complete loss of cargo during transit. This includes situations where the entire shipment is lost, destroyed, or damaged beyond recovery. It does not cover partial damage or loss of individual items within a shipment.'
+  'All Risk': {
+    text: 'All Risk coverage offers the broadest protection for cargo during transit. It covers physical loss or damage caused by ',
+    bold: 'physical external causes',
+    textAfter: ', including partial or total loss, small or big damage or loss, theft, and catastrophic events. This is the highest coverage on any freight insurance policy. Coverage applies from the point the goods begin transit through final delivery, including loading and unloading.'
+  },
+  'Total Loss': {
+    text: 'Total loss coverage applies only if the entire shipment is completely lost or destroyed due to catastrophic event. Partial loss is not covered.',
+    bold: null,
+    textAfter: null
+  }
 };
 
-const CATEGORIES = ['Electronics', 'Machinery', 'Textiles', 'Food & Beverages', 'Chemicals', 'Furniture', 'Auto Parts', 'Other'];
+// Excluded Commodities grouped by category
+const EXCLUDED_COMMODITIES = {
+  'High-Value Items': [
+    'Jewelry',
+    'Watches',
+    'Diamonds',
+    'Precious Metals',
+    'Precious or Semi-Precious Stones',
+    'Specie and Bullion',
+    'Bronze Statues',
+    'Fine Art and Silverware (unless pre-authorized)',
+    'Furs'
+  ],
+  'Electronics (Restricted)': [
+    'Cellular or Mobile Telephones / Smartphones',
+    'iPads',
+    'Laptops and Desktop Computers (Non Business-to-Business)',
+    'Computer Memory (SIMMS, DIMMS), CPUs (unless pre-authorized)',
+    'Plasma TVs'
+  ],
+  'Perishables & Live Goods': [
+    'Fresh Perishable Goods (ice cream, cheese, butter, milk, eggs)',
+    'Fresh Fish',
+    'Produce, Fruits, Vegetables',
+    'Dairy Products, Eggs',
+    'Flowers',
+    'Live Plants',
+    'Live Animals',
+    'Livestock, Animals including Semen'
+  ],
+  'Documents & Financial Instruments': [
+    'Bank Notes',
+    'Bonds, Notes, Deeds',
+    'Negotiable Securities',
+    'Stamps',
+    'Non-reconstructable Documents, Records'
+  ],
+  'Hazardous & Restricted Materials': [
+    'Explosives or Flammables; Red Label / Dangerous Goods',
+    'Chemicals (certain types)',
+    'THC, Marijuana, Marijuana Goods',
+    'Pharmaceuticals (Medicine, Vitamins)',
+    'Human Organs or Blood',
+    'Weapons'
+  ],
+  'Bulk & Unpackaged Goods': [
+    'General Bulk Commodities (steel, ores, petroleum products)',
+    'Bagged Goods not in containers',
+    'Loose goods not professionally packaged',
+    'Non-Containerized Lumber',
+    'Unprofessionally Packed Goods'
+  ],
+  'Other Excluded Items': [
+    'Cigarettes and Tobacco Products',
+    'Fertilizers',
+    'Fishmeal',
+    'Household Goods and Personal Effects',
+    'Spirits in Bottles (unless pre-authorized)',
+    'Waste and/or Garbage',
+    'Marble Slabs',
+    'Glass',
+    'Residence Shipments',
+    'Vehicles for Individuals'
+  ]
+};
+
+// Excluded Commodities Popup Component
+function ExcludedCommoditiesPopup({ isOpen, onClose }) {
+  if (!isOpen) return null;
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      padding: '20px',
+      backdropFilter: 'blur(4px)'
+    }} onClick={onClose}>
+      <div style={{
+        background: '#ffffff',
+        borderRadius: '20px',
+        maxWidth: '800px',
+        width: '100%',
+        maxHeight: '80vh',
+        overflow: 'hidden',
+        border: '1px solid #e2e8f0',
+        boxShadow: '0 25px 50px rgba(0, 0, 0, 0.25)'
+      }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{
+          padding: '24px 30px',
+          borderBottom: '1px solid #e2e8f0',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          background: '#f8fafc'
+        }}>
+          <div>
+            <h2 style={{
+              margin: 0,
+              fontSize: '24px',
+              fontWeight: '600',
+              color: '#1e293b',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px'
+            }}>
+              <span style={{ fontSize: '28px' }}>🚫</span>
+              Excluded Commodities
+            </h2>
+            <p style={{ margin: '6px 0 0', color: '#64748b', fontSize: '14px' }}>
+              The following items are not eligible for coverage
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: '#f1f5f9',
+              border: 'none',
+              borderRadius: '10px',
+              width: '40px',
+              height: '40px',
+              color: '#64748b',
+              fontSize: '24px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s'
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Content */}
+        <div style={{
+          padding: '24px 30px',
+          overflowY: 'auto',
+          maxHeight: 'calc(80vh - 100px)'
+        }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+            gap: '24px'
+          }}>
+            {Object.entries(EXCLUDED_COMMODITIES).map(([category, items]) => (
+              <div key={category} style={{
+                background: '#f8fafc',
+                borderRadius: '12px',
+                padding: '20px',
+                border: '1px solid #e2e8f0'
+              }}>
+                <h3 style={{
+                  margin: '0 0 14px',
+                  fontSize: '15px',
+                  fontWeight: '600',
+                  color: '#ea580c',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <span style={{
+                    width: '6px',
+                    height: '6px',
+                    background: '#ea580c',
+                    borderRadius: '50%'
+                  }}></span>
+                  {category}
+                </h3>
+                <ul style={{
+                  margin: 0,
+                  padding: 0,
+                  listStyle: 'none'
+                }}>
+                  {items.map((item, index) => (
+                    <li key={index} style={{
+                      padding: '8px 0',
+                      borderBottom: index < items.length - 1 ? '1px solid #e2e8f0' : 'none',
+                      color: '#475569',
+                      fontSize: '14px',
+                      lineHeight: '1.4'
+                    }}>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+
+          {/* Footer Note */}
+          <div style={{
+            marginTop: '24px',
+            padding: '16px 20px',
+            background: '#fef3c7',
+            borderRadius: '10px',
+            border: '1px solid #fcd34d'
+          }}>
+            <p style={{
+              margin: 0,
+              color: '#92400e',
+              fontSize: '13px',
+              lineHeight: '1.5'
+            }}>
+              <strong>Note:</strong> Some items marked "unless pre-authorized" may be eligible for coverage with prior approval. 
+              Please contact us for special arrangements.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function FreightInsuranceCalculator() {
   const [category, setCategory] = useState('');
@@ -39,11 +269,12 @@ export default function FreightInsuranceCalculator() {
   const [quote, setQuote] = useState(null);
   const [errors, setErrors] = useState({});
   const [isCalculating, setIsCalculating] = useState(false);
+  const [showExcluded, setShowExcluded] = useState(false);
   
   // Данные из БД
   const [ratesData, setRatesData] = useState(null);
   const [deductiblesData, setDeductiblesData] = useState(null);
-  const [coverageDescriptions, setCoverageDescriptions] = useState(COVERAGE_DESCRIPTIONS);
+  const [categoriesList, setCategoriesList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Загрузка данных из Supabase
@@ -70,7 +301,6 @@ export default function FreightInsuranceCalculator() {
         
         if (ratesResponse.ok) {
           const rates = await ratesResponse.json();
-          // Преобразуем в удобный формат
           const ratesMap = {};
           rates.forEach(r => {
             if (!ratesMap[r.transit_method]) ratesMap[r.transit_method] = {};
@@ -98,19 +328,15 @@ export default function FreightInsuranceCalculator() {
           })));
         }
 
-        // Загружаем описания coverage types
-        const coverageResponse = await fetch(
-          `${SUPABASE_URL}/rest/v1/coverage_types?is_active=eq.true`,
+        // Загружаем категории товаров
+        const categoriesResponse = await fetch(
+          `${SUPABASE_URL}/rest/v1/goods_categories?is_active=eq.true&order=display_order`,
           { headers }
         );
         
-        if (coverageResponse.ok) {
-          const coverageTypes = await coverageResponse.json();
-          const descriptions = {};
-          coverageTypes.forEach(ct => {
-            descriptions[ct.name] = ct.description;
-          });
-          setCoverageDescriptions(descriptions);
+        if (categoriesResponse.ok) {
+          const categories = await categoriesResponse.json();
+          setCategoriesList(categories.map(c => c.name));
         }
 
       } catch (error) {
@@ -126,6 +352,7 @@ export default function FreightInsuranceCalculator() {
   // Используем данные из БД или fallback
   const rates = ratesData || FALLBACK_RATES;
   const deductibles = deductiblesData || FALLBACK_DEDUCTIBLES;
+  const categories = categoriesList.length > 0 ? categoriesList : ['Electronics', 'Machinery', 'Textiles', 'Food & Beverages', 'Chemicals', 'Furniture', 'Auto Parts', 'Other'];
 
   // Auto-calculate cargo value when additional coverage is selected
   useEffect(() => {
@@ -148,11 +375,23 @@ export default function FreightInsuranceCalculator() {
   };
 
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(amount);
+    return new Intl.NumberFormat('en-US', { 
+      style: 'currency', 
+      currency: 'USD', 
+      minimumFractionDigits: 0, 
+      maximumFractionDigits: 0 
+    }).format(amount);
   };
 
   const formatRate = (rate) => {
-    return (rate * 100).toFixed(3) + '%';
+    const percentage = rate * 100;
+    // Минимум 2 знака после запятой, убираем лишние нули
+    let formatted = percentage.toFixed(3);
+    // Убираем лишние нули в конце, но оставляем минимум 2 знака
+    while (formatted.endsWith('0') && formatted.split('.')[1].length > 2) {
+      formatted = formatted.slice(0, -1);
+    }
+    return formatted + '%';
   };
 
   const calculateQuote = () => {
@@ -230,13 +469,13 @@ export default function FreightInsuranceCalculator() {
     return (
       <div style={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #0a1628 0%, #1a2d4a 50%, #0d1929 100%)',
+        background: 'linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         fontFamily: "'Segoe UI', system-ui, sans-serif",
       }}>
-        <div style={{ textAlign: 'center', color: '#fff' }}>
+        <div style={{ textAlign: 'center', color: '#1e293b' }}>
           <div style={{ fontSize: '48px', marginBottom: '20px' }}>⏳</div>
           <p>Loading calculator...</p>
         </div>
@@ -247,11 +486,14 @@ export default function FreightInsuranceCalculator() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(135deg, #0a1628 0%, #1a2d4a 50%, #0d1929 100%)',
+      background: 'linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%)',
       fontFamily: "'Segoe UI', system-ui, sans-serif",
-      color: '#e8edf5',
+      color: '#1e293b',
       padding: '20px'
     }}>
+      {/* Excluded Commodities Popup */}
+      <ExcludedCommoditiesPopup isOpen={showExcluded} onClose={() => setShowExcluded(false)} />
+
       {/* Header */}
       <div style={{
         maxWidth: '900px',
@@ -266,63 +508,42 @@ export default function FreightInsuranceCalculator() {
           marginBottom: '10px',
           flexWrap: 'wrap'
         }}>
+          <img 
+            src="https://ramonins-usa.com/wp-content/uploads/2016/10/logo-ramon.png" 
+            alt="Ramon Insurance"
+            style={{ height: '50px' }}
+          />
           <div style={{
-            width: '50px',
-            height: '50px',
-            background: 'linear-gradient(135deg, #d4380d 0%, #ff6b35 100%)',
-            borderRadius: '12px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 4px 20px rgba(212, 56, 13, 0.4)'
-          }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-              <circle cx="12" cy="12" r="10"/>
-              <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
-            </svg>
-          </div>
-          <div>
-            <h1 style={{
-              fontSize: '28px',
-              fontWeight: '700',
-              margin: 0,
-              background: 'linear-gradient(90deg, #ff6b35, #ff8c5a)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent'
-            }}>FreightInsuranceDirect</h1>
-            <p style={{ margin: 0, fontSize: '14px', color: '#8899aa', letterSpacing: '2px' }}>RAMON INC. • SINCE 1982</p>
-          </div>
-          <div style={{
-            background: 'linear-gradient(135deg, #5a4a2a 0%, #8b7355 100%)',
-            padding: '8px 12px',
+            background: 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%)',
+            padding: '8px 14px',
             borderRadius: '8px',
             fontSize: '11px',
             fontWeight: '600',
             textAlign: 'center',
-            border: '1px solid #a08050'
+            color: '#fff'
           }}>
-            <div style={{ color: '#ffd700' }}>TRUSTED</div>
-            <div style={{ color: '#fff', fontSize: '10px' }}>SINCE 1982</div>
+            <div style={{ color: '#fbbf24' }}>TRUSTED</div>
+            <div style={{ fontSize: '10px' }}>SINCE 1982</div>
           </div>
         </div>
         <h2 style={{
           fontSize: '32px',
-          fontWeight: '300',
+          fontWeight: '600',
           margin: '20px 0 10px',
-          color: '#fff'
+          color: '#1e3a5f'
         }}>Cargo Insurance Calculator</h2>
-        <p style={{ color: '#7a8fa6', margin: 0 }}>Get an instant quote for your freight insurance needs</p>
+        <p style={{ color: '#64748b', margin: 0 }}>Get an instant quote for your freight insurance needs</p>
       </div>
 
       {/* Main Calculator */}
       <div style={{
         maxWidth: '900px',
         margin: '0 auto',
-        background: 'rgba(255, 255, 255, 0.03)',
-        borderRadius: '24px',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
+        background: '#ffffff',
+        borderRadius: '20px',
+        border: '1px solid #e2e8f0',
         overflow: 'hidden',
-        backdropFilter: 'blur(20px)'
+        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
       }}>
         {/* Form Section */}
         <div style={{ padding: '40px' }}>
@@ -333,7 +554,7 @@ export default function FreightInsuranceCalculator() {
           }}>
             {/* Category of Goods */}
             <div>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#8899aa', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 Category of Goods
               </label>
               <select
@@ -342,26 +563,25 @@ export default function FreightInsuranceCalculator() {
                 style={{
                   width: '100%',
                   padding: '14px 16px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
                   borderRadius: '12px',
-                  color: '#fff',
+                  color: '#1e293b',
                   fontSize: '15px',
                   cursor: 'pointer',
-                  outline: 'none',
-                  transition: 'all 0.2s'
+                  outline: 'none'
                 }}
               >
-                <option value="" style={{ background: '#1a2d4a' }}>Select category...</option>
-                {CATEGORIES.map(cat => (
-                  <option key={cat} value={cat} style={{ background: '#1a2d4a' }}>{cat}</option>
+                <option value="">Select category...</option>
+                {categories.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
                 ))}
               </select>
             </div>
 
             {/* Goods Insured */}
             <div>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#8899aa', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 Goods Insured
               </label>
               <input
@@ -372,10 +592,10 @@ export default function FreightInsuranceCalculator() {
                 style={{
                   width: '100%',
                   padding: '14px 16px',
-                  background: 'rgba(255, 255, 255, 0.05)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
                   borderRadius: '12px',
-                  color: '#fff',
+                  color: '#1e293b',
                   fontSize: '15px',
                   outline: 'none',
                   boxSizing: 'border-box'
@@ -385,7 +605,7 @@ export default function FreightInsuranceCalculator() {
 
             {/* Transit Method */}
             <div>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#8899aa', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 Transit Method *
               </label>
               <div style={{ display: 'flex', gap: '10px' }}>
@@ -397,13 +617,13 @@ export default function FreightInsuranceCalculator() {
                       flex: 1,
                       padding: '14px',
                       background: transitMethod === method 
-                        ? 'linear-gradient(135deg, #d4380d 0%, #ff6b35 100%)'
-                        : 'rgba(255, 255, 255, 0.05)',
+                        ? 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%)'
+                        : '#f8fafc',
                       border: transitMethod === method 
                         ? 'none'
-                        : `1px solid ${errors.transitMethod ? '#ff4d4f' : 'rgba(255, 255, 255, 0.1)'}`,
+                        : `1px solid ${errors.transitMethod ? '#ef4444' : '#e2e8f0'}`,
                       borderRadius: '12px',
-                      color: '#fff',
+                      color: transitMethod === method ? '#fff' : '#1e293b',
                       fontSize: '14px',
                       fontWeight: '500',
                       cursor: 'pointer',
@@ -421,12 +641,12 @@ export default function FreightInsuranceCalculator() {
                   </button>
                 ))}
               </div>
-              {errors.transitMethod && <p style={{ color: '#ff4d4f', fontSize: '12px', margin: '6px 0 0' }}>{errors.transitMethod}</p>}
+              {errors.transitMethod && <p style={{ color: '#ef4444', fontSize: '12px', margin: '6px 0 0' }}>{errors.transitMethod}</p>}
             </div>
 
             {/* Coverage Type */}
             <div>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#8899aa', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 Coverage Type *
               </label>
               <div style={{ display: 'flex', gap: '10px' }}>
@@ -438,13 +658,13 @@ export default function FreightInsuranceCalculator() {
                       flex: 1,
                       padding: '14px 20px',
                       background: coverageType === type 
-                        ? 'linear-gradient(135deg, #1890ff 0%, #40a9ff 100%)'
-                        : 'rgba(255, 255, 255, 0.05)',
+                        ? 'linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%)'
+                        : '#f8fafc',
                       border: coverageType === type 
                         ? 'none'
-                        : `1px solid ${errors.coverageType ? '#ff4d4f' : 'rgba(255, 255, 255, 0.1)'}`,
+                        : `1px solid ${errors.coverageType ? '#ef4444' : '#e2e8f0'}`,
                       borderRadius: '12px',
-                      color: '#fff',
+                      color: coverageType === type ? '#fff' : '#1e293b',
                       fontSize: '14px',
                       fontWeight: '500',
                       cursor: 'pointer',
@@ -455,12 +675,12 @@ export default function FreightInsuranceCalculator() {
                   </button>
                 ))}
               </div>
-              {errors.coverageType && <p style={{ color: '#ff4d4f', fontSize: '12px', margin: '6px 0 0' }}>{errors.coverageType}</p>}
+              {errors.coverageType && <p style={{ color: '#ef4444', fontSize: '12px', margin: '6px 0 0' }}>{errors.coverageType}</p>}
             </div>
 
             {/* Coverage For */}
             <div style={{ gridColumn: '1 / -1' }}>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#8899aa', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 Coverage For *
               </label>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
@@ -478,13 +698,13 @@ export default function FreightInsuranceCalculator() {
                     style={{
                       padding: '16px 20px',
                       background: coverageFor === type 
-                        ? 'linear-gradient(135deg, #52c41a 0%, #73d13d 100%)'
-                        : 'rgba(255, 255, 255, 0.05)',
+                        ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+                        : '#f8fafc',
                       border: coverageFor === type 
                         ? 'none'
-                        : `1px solid ${errors.coverageFor ? '#ff4d4f' : 'rgba(255, 255, 255, 0.1)'}`,
+                        : `1px solid ${errors.coverageFor ? '#ef4444' : '#e2e8f0'}`,
                       borderRadius: '12px',
-                      color: '#fff',
+                      color: coverageFor === type ? '#fff' : '#1e293b',
                       fontSize: '14px',
                       fontWeight: '500',
                       cursor: 'pointer',
@@ -499,22 +719,23 @@ export default function FreightInsuranceCalculator() {
                   </button>
                 ))}
               </div>
-              {errors.coverageFor && <p style={{ color: '#ff4d4f', fontSize: '12px', margin: '6px 0 0' }}>{errors.coverageFor}</p>}
+              {errors.coverageFor && <p style={{ color: '#ef4444', fontSize: '12px', margin: '6px 0 0' }}>{errors.coverageFor}</p>}
             </div>
 
             {/* Cargo Value */}
             <div style={{ gridColumn: coverageFor === 'Additional' ? 'auto' : '1 / -1' }}>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#8899aa', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
                 Cargo Value (USD) *
               </label>
-              <div style={{ position: 'relative' }}>
+              <div style={{ position: 'relative', maxWidth: coverageFor === 'Additional' ? '100%' : '400px' }}>
                 <span style={{
                   position: 'absolute',
                   left: '16px',
                   top: '50%',
                   transform: 'translateY(-50%)',
-                  color: '#8899aa',
-                  fontSize: '16px'
+                  color: '#64748b',
+                  fontSize: '18px',
+                  fontWeight: '600'
                 }}>$</span>
                 <input
                   type="number"
@@ -524,26 +745,26 @@ export default function FreightInsuranceCalculator() {
                   readOnly={coverageFor === 'Additional'}
                   style={{
                     width: '100%',
-                    padding: '14px 16px 14px 32px',
-                    background: coverageFor === 'Additional' ? 'rgba(255, 255, 255, 0.02)' : 'rgba(255, 255, 255, 0.05)',
-                    border: `1px solid ${errors.cargoValue ? '#ff4d4f' : 'rgba(255, 255, 255, 0.1)'}`,
+                    padding: '16px 16px 16px 36px',
+                    background: coverageFor === 'Additional' ? '#f1f5f9' : '#f8fafc',
+                    border: `1px solid ${errors.cargoValue ? '#ef4444' : '#e2e8f0'}`,
                     borderRadius: '12px',
-                    color: '#fff',
-                    fontSize: '18px',
-                    fontWeight: '600',
+                    color: '#1e293b',
+                    fontSize: '20px',
+                    fontWeight: '700',
                     outline: 'none',
                     boxSizing: 'border-box'
                   }}
                 />
               </div>
-              {errors.cargoValue && <p style={{ color: '#ff4d4f', fontSize: '12px', margin: '6px 0 0' }}>{errors.cargoValue}</p>}
+              {errors.cargoValue && <p style={{ color: '#ef4444', fontSize: '12px', margin: '6px 0 0' }}>{errors.cargoValue}</p>}
             </div>
 
             {/* Additional Coverage Fields */}
             {coverageFor === 'Additional' && (
               <>
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#8899aa', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
                     Additional Value (USD) *
                   </label>
                   <div style={{ position: 'relative' }}>
@@ -552,7 +773,7 @@ export default function FreightInsuranceCalculator() {
                       left: '16px',
                       top: '50%',
                       transform: 'translateY(-50%)',
-                      color: '#8899aa',
+                      color: '#64748b',
                       fontSize: '16px'
                     }}>$</span>
                     <input
@@ -563,21 +784,21 @@ export default function FreightInsuranceCalculator() {
                       style={{
                         width: '100%',
                         padding: '14px 16px 14px 32px',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: `1px solid ${errors.additionalValue ? '#ff4d4f' : 'rgba(255, 255, 255, 0.1)'}`,
+                        background: '#f8fafc',
+                        border: `1px solid ${errors.additionalValue ? '#ef4444' : '#e2e8f0'}`,
                         borderRadius: '12px',
-                        color: '#fff',
+                        color: '#1e293b',
                         fontSize: '16px',
                         outline: 'none',
                         boxSizing: 'border-box'
                       }}
                     />
                   </div>
-                  {errors.additionalValue && <p style={{ color: '#ff4d4f', fontSize: '12px', margin: '6px 0 0' }}>{errors.additionalValue}</p>}
+                  {errors.additionalValue && <p style={{ color: '#ef4444', fontSize: '12px', margin: '6px 0 0' }}>{errors.additionalValue}</p>}
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#8899aa', fontSize: '13px', fontWeight: '500', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
                     Carrier&apos;s Insurance (USD) *
                   </label>
                   <div style={{ position: 'relative' }}>
@@ -586,7 +807,7 @@ export default function FreightInsuranceCalculator() {
                       left: '16px',
                       top: '50%',
                       transform: 'translateY(-50%)',
-                      color: '#8899aa',
+                      color: '#64748b',
                       fontSize: '16px'
                     }}>$</span>
                     <input
@@ -597,17 +818,17 @@ export default function FreightInsuranceCalculator() {
                       style={{
                         width: '100%',
                         padding: '14px 16px 14px 32px',
-                        background: 'rgba(255, 255, 255, 0.05)',
-                        border: `1px solid ${errors.carrierInsurance ? '#ff4d4f' : 'rgba(255, 255, 255, 0.1)'}`,
+                        background: '#f8fafc',
+                        border: `1px solid ${errors.carrierInsurance ? '#ef4444' : '#e2e8f0'}`,
                         borderRadius: '12px',
-                        color: '#fff',
+                        color: '#1e293b',
                         fontSize: '16px',
                         outline: 'none',
                         boxSizing: 'border-box'
                       }}
                     />
                   </div>
-                  {errors.carrierInsurance && <p style={{ color: '#ff4d4f', fontSize: '12px', margin: '6px 0 0' }}>{errors.carrierInsurance}</p>}
+                  {errors.carrierInsurance && <p style={{ color: '#ef4444', fontSize: '12px', margin: '6px 0 0' }}>{errors.carrierInsurance}</p>}
                 </div>
               </>
             )}
@@ -622,8 +843,8 @@ export default function FreightInsuranceCalculator() {
                 flex: '2 1 200px',
                 padding: '18px 40px',
                 background: isCalculating 
-                  ? 'rgba(212, 56, 13, 0.5)'
-                  : 'linear-gradient(135deg, #d4380d 0%, #ff6b35 100%)',
+                  ? '#fdba74'
+                  : 'linear-gradient(135deg, #ea580c 0%, #f97316 100%)',
                 border: 'none',
                 borderRadius: '12px',
                 color: '#fff',
@@ -631,7 +852,7 @@ export default function FreightInsuranceCalculator() {
                 fontWeight: '600',
                 cursor: isCalculating ? 'wait' : 'pointer',
                 transition: 'all 0.3s',
-                boxShadow: '0 4px 20px rgba(212, 56, 13, 0.3)',
+                boxShadow: '0 4px 14px rgba(234, 88, 12, 0.4)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -659,10 +880,10 @@ export default function FreightInsuranceCalculator() {
               style={{
                 flex: '1 1 100px',
                 padding: '18px 30px',
-                background: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
                 borderRadius: '12px',
-                color: '#8899aa',
+                color: '#64748b',
                 fontSize: '16px',
                 fontWeight: '500',
                 cursor: 'pointer',
@@ -677,26 +898,26 @@ export default function FreightInsuranceCalculator() {
         {/* Quote Result */}
         {quote && (
           <div style={{
-            background: 'linear-gradient(135deg, rgba(82, 196, 26, 0.1) 0%, rgba(24, 144, 255, 0.1) 100%)',
-            borderTop: '1px solid rgba(82, 196, 26, 0.3)',
+            background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfeff 100%)',
+            borderTop: '1px solid #bbf7d0',
             padding: '40px',
             animation: 'fadeIn 0.5s ease'
           }}>
             {quote.needsQuote ? (
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '48px', marginBottom: '15px' }}>📋</div>
-                <h3 style={{ fontSize: '24px', color: '#ffc53d', margin: '0 0 10px' }}>Custom Quote Required</h3>
-                <p style={{ color: '#8899aa', margin: '0 0 20px' }}>
+                <h3 style={{ fontSize: '24px', color: '#d97706', margin: '0 0 10px' }}>Custom Quote Required</h3>
+                <p style={{ color: '#64748b', margin: '0 0 20px' }}>
                   For cargo values over $500,000, please contact us for a personalized quote.
                 </p>
                 <a
-                  href="https://ramonins-usa.com/contact"
+                  href="https://ramonins-usa.com/contact-us/"
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{
                     display: 'inline-block',
                     padding: '14px 30px',
-                    background: 'linear-gradient(135deg, #d4380d 0%, #ff6b35 100%)',
+                    background: 'linear-gradient(135deg, #ea580c 0%, #f97316 100%)',
                     borderRadius: '10px',
                     color: '#fff',
                     textDecoration: 'none',
@@ -708,7 +929,7 @@ export default function FreightInsuranceCalculator() {
               </div>
             ) : (
               <>
-                <h3 style={{ fontSize: '20px', color: '#52c41a', margin: '0 0 25px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h3 style={{ fontSize: '20px', color: '#059669', margin: '0 0 25px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span style={{ fontSize: '28px' }}>✓</span> Your Quote
                 </h3>
                 
@@ -719,90 +940,96 @@ export default function FreightInsuranceCalculator() {
                   marginBottom: '30px'
                 }}>
                   <div style={{
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    borderRadius: '16px',
-                    padding: '20px',
-                    textAlign: 'center'
-                  }}>
-                    <div style={{ color: '#8899aa', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Rate</div>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#fff' }}>{formatRate(quote.rate)}</div>
-                  </div>
-                  
-                  <div style={{
-                    background: 'linear-gradient(135deg, rgba(82, 196, 26, 0.2) 0%, rgba(82, 196, 26, 0.1) 100%)',
+                    background: '#ffffff',
                     borderRadius: '16px',
                     padding: '20px',
                     textAlign: 'center',
-                    border: '1px solid rgba(82, 196, 26, 0.3)'
+                    border: '1px solid #e2e8f0'
                   }}>
-                    <div style={{ color: '#52c41a', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Premium</div>
-                    <div style={{ fontSize: '32px', fontWeight: '700', color: '#52c41a' }}>{formatCurrency(quote.premium)}</div>
+                    <div style={{ color: '#64748b', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Rate</div>
+                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>{formatRate(quote.rate)}</div>
+                  </div>
+                  
+                  <div style={{
+                    background: 'linear-gradient(135deg, #dcfce7 0%, #d1fae5 100%)',
+                    borderRadius: '16px',
+                    padding: '20px',
+                    textAlign: 'center',
+                    border: '1px solid #86efac'
+                  }}>
+                    <div style={{ color: '#059669', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Premium</div>
+                    <div style={{ fontSize: '32px', fontWeight: '700', color: '#059669' }}>{formatCurrency(quote.premium)}</div>
                   </div>
                   
                   {coverageFor === 'Full Value' && (
                     <div style={{
-                      background: 'rgba(255, 255, 255, 0.05)',
+                      background: '#ffffff',
                       borderRadius: '16px',
                       padding: '20px',
-                      textAlign: 'center'
+                      textAlign: 'center',
+                      border: '1px solid #e2e8f0'
                     }}>
-                      <div style={{ color: '#8899aa', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Deductible</div>
-                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#fff' }}>{formatCurrency(quote.deductible)}</div>
+                      <div style={{ color: '#64748b', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Deductible</div>
+                      <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>{formatCurrency(quote.deductible)}</div>
                     </div>
                   )}
                 </div>
 
                 <div style={{
-                  background: 'rgba(255, 255, 255, 0.03)',
+                  background: '#ffffff',
                   borderRadius: '12px',
                   padding: '20px',
-                  marginBottom: '25px'
+                  marginBottom: '25px',
+                  border: '1px solid #e2e8f0'
                 }}>
-                  <h4 style={{ margin: '0 0 10px', color: '#fff', fontSize: '16px' }}>
+                  <h4 style={{ margin: '0 0 10px', color: '#1e293b', fontSize: '16px' }}>
                     {coverageType} Coverage
                   </h4>
-                  <p style={{ margin: 0, color: '#8899aa', fontSize: '14px', lineHeight: '1.6' }}>
-                    {coverageDescriptions[coverageType]}
+                  <p style={{ margin: 0, color: '#64748b', fontSize: '14px', lineHeight: '1.6' }}>
+                    {COVERAGE_DESCRIPTIONS[coverageType].text}
+                    {COVERAGE_DESCRIPTIONS[coverageType].bold && (
+                      <strong style={{ color: '#1e293b' }}>{COVERAGE_DESCRIPTIONS[coverageType].bold}</strong>
+                    )}
+                    {COVERAGE_DESCRIPTIONS[coverageType].textAfter}
                   </p>
                 </div>
 
                 <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
                   <a
-                    href="https://ramonins-usa.com/purchase"
+                    href="https://ramonins-usa.com/purchase-now/"
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
                       flex: '1 1 200px',
                       padding: '16px 30px',
-                      background: 'linear-gradient(135deg, #d4380d 0%, #ff6b35 100%)',
+                      background: 'linear-gradient(135deg, #ea580c 0%, #f97316 100%)',
                       borderRadius: '10px',
                       color: '#fff',
                       textDecoration: 'none',
                       fontWeight: '600',
                       textAlign: 'center',
-                      boxShadow: '0 4px 20px rgba(212, 56, 13, 0.3)'
+                      boxShadow: '0 4px 14px rgba(234, 88, 12, 0.3)'
                     }}
                   >
                     Purchase Coverage →
                   </a>
-                  <a
-                    href="https://ramonins-usa.com/excluded-goods"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    onClick={() => setShowExcluded(true)}
                     style={{
                       flex: '1 1 200px',
                       padding: '16px 30px',
-                      background: 'rgba(255, 255, 255, 0.05)',
-                      border: '1px solid rgba(255, 255, 255, 0.1)',
+                      background: '#ffffff',
+                      border: '1px solid #e2e8f0',
                       borderRadius: '10px',
-                      color: '#8899aa',
-                      textDecoration: 'none',
+                      color: '#64748b',
                       fontWeight: '500',
-                      textAlign: 'center'
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      fontSize: '16px'
                     }}
                   >
                     View Excluded Goods
-                  </a>
+                  </button>
                 </div>
               </>
             )}
@@ -812,16 +1039,16 @@ export default function FreightInsuranceCalculator() {
         {/* Disclaimer */}
         <div style={{
           padding: '20px 40px',
-          borderTop: '1px solid rgba(255, 255, 255, 0.05)',
-          background: 'rgba(0, 0, 0, 0.2)'
+          borderTop: '1px solid #e2e8f0',
+          background: '#f8fafc'
         }}>
           <p style={{
             margin: 0,
-            color: '#5a6a7a',
+            color: '#64748b',
             fontSize: '12px',
             lineHeight: '1.6'
           }}>
-            <strong>Disclaimer:</strong> All quotes are indicative and non-binding. Coverage, rates, limits, and terms are subject to verification of shipment information, underwriting approval, and policy terms and conditions. Final premium may vary based on complete shipment details. Please review the full policy documentation before purchase.
+            <strong style={{ color: '#1e293b' }}>Disclaimer:</strong> All quotes are indicative and non-binding. Coverage, rates, limits, and terms are subject to verification of shipment information, underwriting approval, and policy issuance. We reserve the rights to modify or withdraw quotations. For support, call <strong style={{ color: '#1e293b' }}>888-441-4435</strong>.
           </p>
         </div>
       </div>
@@ -831,14 +1058,27 @@ export default function FreightInsuranceCalculator() {
         maxWidth: '900px',
         margin: '30px auto 0',
         textAlign: 'center',
-        color: '#5a6a7a',
+        color: '#64748b',
         fontSize: '13px'
       }}>
         <p style={{ margin: '0 0 10px' }}>© 2024 Ramon Inc. All rights reserved.</p>
         <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap' }}>
-          <a href="https://ramonins-usa.com" target="_blank" rel="noopener noreferrer" style={{ color: '#8899aa', textDecoration: 'none' }}>Website</a>
-          <a href="https://ramonins-usa.com/contact" target="_blank" rel="noopener noreferrer" style={{ color: '#8899aa', textDecoration: 'none' }}>Contact Us</a>
-          <a href="https://ramonins-usa.com/terms" target="_blank" rel="noopener noreferrer" style={{ color: '#8899aa', textDecoration: 'none' }}>Terms of Service</a>
+          <a href="https://ramonins-usa.com" target="_blank" rel="noopener noreferrer" style={{ color: '#1e3a5f', textDecoration: 'none' }}>Website</a>
+          <a href="https://ramonins-usa.com/contact-us/" target="_blank" rel="noopener noreferrer" style={{ color: '#1e3a5f', textDecoration: 'none' }}>Contact Us</a>
+          <button 
+            onClick={() => setShowExcluded(true)}
+            style={{ 
+              color: '#1e3a5f', 
+              textDecoration: 'none',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '13px',
+              padding: 0
+            }}
+          >
+            Excluded Goods
+          </button>
         </div>
       </div>
 
@@ -857,10 +1097,6 @@ export default function FreightInsuranceCalculator() {
         }
         input[type=number] {
           -moz-appearance: textfield;
-        }
-        select option {
-          background: #1a2d4a;
-          color: #fff;
         }
         * {
           box-sizing: border-box;
