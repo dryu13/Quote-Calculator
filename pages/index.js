@@ -592,68 +592,23 @@ export default function FreightInsuranceCalculator() {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: '15px',
+          gap: '20px',
           marginBottom: '10px',
           flexWrap: 'wrap'
         }}>
-          {/* Truck Icon */}
-          <div style={{
-            width: '50px',
-            height: '50px',
-            background: 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 4px 12px rgba(220, 38, 38, 0.3)'
-          }}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-              <rect x="1" y="3" width="15" height="13" rx="2"/>
-              <path d="M16 8h4l3 3v5h-7V8z"/>
-              <circle cx="5.5" cy="18.5" r="2.5"/>
-              <circle cx="18.5" cy="18.5" r="2.5"/>
-            </svg>
-          </div>
-          
-          {/* Logo Text */}
-          <div>
-            <h1 style={{
-              fontSize: '28px',
-              fontWeight: '700',
-              margin: 0,
-              letterSpacing: '-0.5px'
-            }}>
-              <span style={{ color: '#1e293b' }}>Freight</span>
-              <span style={{ color: '#1e293b' }}>Insurance</span>
-              <span style={{ color: '#ea580c' }}>Direct</span>
-              <span style={{ fontSize: '14px', verticalAlign: 'super', color: '#64748b' }}>®</span>
-            </h1>
-            <div style={{
-              height: '3px',
-              background: 'linear-gradient(90deg, #ea580c 0%, #f97316 50%, #fbbf24 100%)',
-              borderRadius: '2px',
-              marginTop: '4px'
-            }}></div>
-            <p style={{ margin: '6px 0 0', fontSize: '14px', color: '#64748b', letterSpacing: '1px' }}>
-              RAMON INC. • SINCE 1982
-            </p>
-          </div>
+          {/* Main Logo */}
+          <img 
+            src="/logo-main.png" 
+            alt="FreightInsuranceDirect - Ramon Inc. Since 1982"
+            style={{ height: '70px' }}
+          />
           
           {/* Trusted Badge */}
-          <div style={{
-            background: 'linear-gradient(135deg, #78350f 0%, #a16207 100%)',
-            padding: '10px 14px',
-            borderRadius: '8px',
-            fontSize: '11px',
-            fontWeight: '700',
-            textAlign: 'center',
-            border: '2px solid #ca8a04',
-            boxShadow: '0 4px 12px rgba(161, 98, 7, 0.3)'
-          }}>
-            <div style={{ color: '#fde047', letterSpacing: '1px' }}>TRUSTED</div>
-            <div style={{ color: '#fef3c7', fontSize: '13px' }}>SINCE</div>
-            <div style={{ color: '#fde047', fontSize: '16px' }}>1982</div>
-          </div>
+          <img 
+            src="/badge-trusted.png" 
+            alt="Trusted Since 1982"
+            style={{ height: '60px' }}
+          />
         </div>
         
         <h2 style={{
