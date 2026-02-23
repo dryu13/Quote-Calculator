@@ -306,9 +306,16 @@ export default function FreightInsuranceCalculator() {
   const [carrierInsurance, setCarrierInsurance] = useState('');
   const [carrierInsuranceDisplay, setCarrierInsuranceDisplay] = useState('');
   const [quote, setQuote] = useState(null);
+  const [quoteId, setQuoteId] = useState(null);
   const [errors, setErrors] = useState({});
   const [isCalculating, setIsCalculating] = useState(false);
   const [showExcluded, setShowExcluded] = useState(false);
+  
+  // Email states
+  const [email, setEmail] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+  const [emailError, setEmailError] = useState('');
   
   // Данные из БД
   const [ratesData, setRatesData] = useState(null);
@@ -479,7 +486,33 @@ export default function FreightInsuranceCalculator() {
     return formatted + '%';
   };
 
-  const calculateQuote = () => {
+  // Сохранение расчёта в БД
+  const saveQuoteToDatabase = async (quoteData) => {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
+
+    try {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/quote_requests`, {
+        method: 'POST',
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+          'Prefer': 'return=representation'
+        },
+        body: JSON.stringify(quoteData)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data[0]?.id || null;
+      }
+    } catch (error) {
+      console.error('Error saving quote:', error);
+    }
+    return null;
+  };
+
+  const calculateQuote = async () => {
     const newErrors = {};
     if (!transitMethod) newErrors.transitMethod = 'Please select transit method';
     if (!coverageType) newErrors.coverageType = 'Please select coverage type';
@@ -508,33 +541,113 @@ export default function FreightInsuranceCalculator() {
     if (Object.keys(newErrors).length > 0) return;
 
     setIsCalculating(true);
+    setEmailSent(false);
+    setEmailError('');
+    setEmail('');
     
-    setTimeout(() => {
-      const transitRates = rates[transitMethod]?.[coverageType];
-      if (!transitRates) {
-        setErrors({ general: 'Rate not found for selected options' });
-        setIsCalculating(false);
-        return;
-      }
-      
-      const rate = coverageFor === 'Full Value' ? transitRates.fullValue : transitRates.additional;
-      const insuredAmount = coverageFor === 'Full Value' ? cargo : parseFloat(additionalValue);
-      
-      let premium = insuredAmount * rate;
-      premium = Math.max(premium, transitRates.minimum || 75);
-      
-      const deductible = coverageFor === 'Full Value' ? calculateDeductible(cargo) : 0;
+    // Simulate calculation delay
+    await new Promise(resolve => setTimeout(resolve, 600));
 
-      setQuote({
-        rate,
-        premium: Math.round(premium * 100) / 100,
-        deductible,
-        minimum: transitRates.minimum || 75,
-        insuredAmount,
-        needsQuote: deductible === 'quote'
-      });
+    const transitRates = rates[transitMethod]?.[coverageType];
+    if (!transitRates) {
+      setErrors({ general: 'Rate not found for selected options' });
       setIsCalculating(false);
-    }, 600);
+      return;
+    }
+    
+    const rate = coverageFor === 'Full Value' ? transitRates.fullValue : transitRates.additional;
+    const insuredAmount = coverageFor === 'Full Value' ? cargo : parseFloat(additionalValue);
+    
+    let premium = insuredAmount * rate;
+    premium = Math.max(premium, transitRates.minimum || 75);
+    
+    const deductible = coverageFor === 'Full Value' ? calculateDeductible(cargo) : 0;
+
+    const quoteResult = {
+      rate,
+      premium: Math.round(premium * 100) / 100,
+      deductible,
+      minimum: transitRates.minimum || 75,
+      insuredAmount,
+      needsQuote: deductible === 'quote'
+    };
+
+    setQuote(quoteResult);
+
+    // Сохраняем в БД
+    const savedId = await saveQuoteToDatabase({
+      category: category || null,
+      goods_description: goodsInsured || null,
+      transit_method: transitMethod,
+      coverage_type: coverageType,
+      coverage_for: coverageFor,
+      cargo_value: cargo,
+      additional_value: coverageFor === 'Additional' ? parseFloat(additionalValue) : null,
+      carrier_insurance: coverageFor === 'Additional' ? parseFloat(carrierInsurance) : null,
+      rate: rate,
+      premium: quoteResult.premium,
+      deductible: quoteResult.needsQuote ? null : deductible,
+      insured_amount: insuredAmount
+    });
+
+    setQuoteId(savedId);
+    setIsCalculating(false);
+  };
+
+  // Отправка email
+  const sendQuoteEmail = async () => {
+    if (!email) {
+      setEmailError('Please enter your email address');
+      return;
+    }
+
+    // Простая валидация email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setEmailError('Please enter a valid email address');
+      return;
+    }
+
+    setIsSendingEmail(true);
+    setEmailError('');
+
+    try {
+      const response = await fetch('/api/send-quote', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          quoteId,
+          category,
+          goodsDescription: goodsInsured,
+          transitMethod,
+          coverageType,
+          coverageFor,
+          cargoValue: parseFloat(cargoValue),
+          additionalValue: coverageFor === 'Additional' ? parseFloat(additionalValue) : null,
+          carrierInsurance: coverageFor === 'Additional' ? parseFloat(carrierInsurance) : null,
+          rate: quote.rate,
+          premium: quote.premium,
+          deductible: quote.deductible,
+          insuredAmount: quote.insuredAmount
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setEmailSent(true);
+      } else {
+        setEmailError(data.error || 'Failed to send email. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error sending email:', error);
+      setEmailError('Failed to send email. Please try again.');
+    }
+
+    setIsSendingEmail(false);
   };
 
   const resetForm = () => {
@@ -550,7 +663,11 @@ export default function FreightInsuranceCalculator() {
     setCarrierInsurance('');
     setCarrierInsuranceDisplay('');
     setQuote(null);
+    setQuoteId(null);
     setErrors({});
+    setEmail('');
+    setEmailSent(false);
+    setEmailError('');
   };
 
   if (isLoading) {
@@ -1079,6 +1196,93 @@ export default function FreightInsuranceCalculator() {
                     )}
                     {COVERAGE_DESCRIPTIONS[coverageType].textAfter}
                   </p>
+                </div>
+
+                {/* Email Section */}
+                <div style={{
+                  background: '#ffffff',
+                  borderRadius: '12px',
+                  padding: '20px',
+                  marginBottom: '25px',
+                  border: '1px solid #e2e8f0'
+                }}>
+                  {emailSent ? (
+                    <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                      <div style={{ fontSize: '32px', marginBottom: '10px' }}>✅</div>
+                      <p style={{ color: '#059669', fontWeight: '600', margin: 0 }}>
+                        Quote sent to {email}!
+                      </p>
+                      <p style={{ color: '#64748b', fontSize: '14px', margin: '8px 0 0' }}>
+                        Check your inbox for the quote details.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <h4 style={{ margin: '0 0 15px', color: '#1e293b', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span>📧</span> Save your quote
+                      </h4>
+                      <p style={{ margin: '0 0 15px', color: '#64748b', fontSize: '14px' }}>
+                        Enter your email to receive this quote and save it for later.
+                      </p>
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                        <input
+                          type="email"
+                          value={email}
+                          onChange={(e) => { setEmail(e.target.value); setEmailError(''); }}
+                          placeholder="your@email.com"
+                          style={{
+                            flex: '1 1 200px',
+                            padding: '14px 16px',
+                            background: '#f8fafc',
+                            border: `1px solid ${emailError ? '#ef4444' : '#e2e8f0'}`,
+                            borderRadius: '10px',
+                            color: '#1e293b',
+                            fontSize: '15px',
+                            outline: 'none'
+                          }}
+                        />
+                        <button
+                          onClick={sendQuoteEmail}
+                          disabled={isSendingEmail}
+                          style={{
+                            padding: '14px 24px',
+                            background: isSendingEmail 
+                              ? '#94a3b8'
+                              : 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%)',
+                            border: 'none',
+                            borderRadius: '10px',
+                            color: '#fff',
+                            fontSize: '15px',
+                            fontWeight: '600',
+                            cursor: isSendingEmail ? 'wait' : 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {isSendingEmail ? (
+                            <>
+                              <span style={{
+                                width: '16px',
+                                height: '16px',
+                                border: '2px solid rgba(255,255,255,0.3)',
+                                borderTopColor: '#fff',
+                                borderRadius: '50%',
+                                animation: 'spin 1s linear infinite'
+                              }}/>
+                              Sending...
+                            </>
+                          ) : (
+                            'Save Quote'
+                          )}
+                        </button>
+                      </div>
+                      {emailError && (
+                        <p style={{ color: '#ef4444', fontSize: '13px', margin: '8px 0 0' }}>{emailError}</p>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
