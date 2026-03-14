@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 
 // Конфигурация Supabase
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -135,8 +135,8 @@ const EXCLUDED_COMMODITIES = {
   ]
 };
 
-// Excluded Commodities Popup Component
-function ExcludedCommoditiesPopup({ isOpen, onClose }) {
+// Excluded Commodities Popup Component - Мемоизированный компонент
+const ExcludedCommoditiesPopup = React.memo(({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   return (
@@ -213,14 +213,14 @@ function ExcludedCommoditiesPopup({ isOpen, onClose }) {
 
         {/* Content */}
         <div style={{
-          padding: '24px 30px',
+          maxHeight: 'calc(80vh - 140px)',
           overflowY: 'auto',
-          maxHeight: 'calc(80vh - 100px)'
+          padding: '30px'
         }}>
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
-            gap: '24px'
+            gap: '25px'
           }}>
             {Object.entries(EXCLUDED_COMMODITIES).map(([category, items]) => (
               <div key={category} style={{
@@ -230,264 +230,254 @@ function ExcludedCommoditiesPopup({ isOpen, onClose }) {
                 border: '1px solid #e2e8f0'
               }}>
                 <h3 style={{
-                  margin: '0 0 14px',
-                  fontSize: '15px',
+                  margin: '0 0 15px',
+                  color: '#1e293b',
+                  fontSize: '16px',
                   fontWeight: '600',
-                  color: '#ea580c',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px'
+                  paddingBottom: '12px',
+                  borderBottom: '2px solid #e2e8f0'
                 }}>
-                  <span style={{
-                    width: '6px',
-                    height: '6px',
-                    background: '#ea580c',
-                    borderRadius: '50%'
-                  }}></span>
                   {category}
                 </h3>
                 <ul style={{
                   margin: 0,
-                  padding: 0,
-                  listStyle: 'none'
+                  paddingLeft: '20px',
+                  color: '#475569',
+                  fontSize: '14px',
+                  lineHeight: '1.8'
                 }}>
-                  {items.map((item, index) => (
-                    <li key={index} style={{
-                      padding: '8px 0',
-                      borderBottom: index < items.length - 1 ? '1px solid #e2e8f0' : 'none',
-                      color: '#475569',
-                      fontSize: '14px',
-                      lineHeight: '1.4'
-                    }}>
-                      {item}
-                    </li>
+                  {items.map((item, idx) => (
+                    <li key={idx} style={{ marginBottom: '6px' }}>{item}</li>
                   ))}
                 </ul>
               </div>
             ))}
           </div>
 
-          {/* Footer Note */}
           <div style={{
-            marginTop: '24px',
-            padding: '16px 20px',
+            marginTop: '30px',
+            padding: '20px',
             background: '#fef3c7',
-            borderRadius: '10px',
-            border: '1px solid #fcd34d'
+            border: '1px solid #fcd34d',
+            borderRadius: '12px'
           }}>
             <p style={{
               margin: 0,
               color: '#92400e',
-              fontSize: '13px',
-              lineHeight: '1.5'
+              fontSize: '14px',
+              lineHeight: '1.6'
             }}>
-              <strong>Note:</strong> Some items marked "unless pre-authorized" may be eligible for coverage with prior approval. 
-              Please contact us for special arrangements.
+              <strong>Note:</strong> Some items may be eligible for coverage with prior authorization. Please contact us at <strong>888-441-4435</strong> for pre-approval.
             </p>
           </div>
         </div>
       </div>
     </div>
   );
-}
+});
 
-export default function FreightInsuranceCalculator() {
-  const [category, setCategory] = useState('');
-  const [goodsInsured, setGoodsInsured] = useState('');
-  const [transitMethod, setTransitMethod] = useState('');
-  const [coverageType, setCoverageType] = useState('');
-  const [coverageFor, setCoverageFor] = useState('');
-  const [cargoValue, setCargoValue] = useState('');
-  const [cargoValueDisplay, setCargoValueDisplay] = useState('');
-  const [additionalValue, setAdditionalValue] = useState('');
-  const [additionalValueDisplay, setAdditionalValueDisplay] = useState('');
-  const [carrierInsurance, setCarrierInsurance] = useState('');
-  const [carrierInsuranceDisplay, setCarrierInsuranceDisplay] = useState('');
-  const [quote, setQuote] = useState(null);
-  const [quoteId, setQuoteId] = useState(null);
-  const [errors, setErrors] = useState({});
-  const [isCalculating, setIsCalculating] = useState(false);
-  const [showExcluded, setShowExcluded] = useState(false);
+ExcludedCommoditiesPopup.displayName = 'ExcludedCommoditiesPopup';
+
+export default function CargoCalculator() {
+  const [step, setStep] = useState('form');
   
-  // Email states
+  // Form state
+  const [category, setCategory] = useState('');
+  const [customCategory, setCustomCategory] = useState('');
+  const [goodsDescription, setGoodsDescription] = useState('');
+  const [transitMethod, setTransitMethod] = useState('Land');
+  const [coverageType, setCoverageType] = useState('All Risk');
+  const [coverageFor, setCoverageFor] = useState('Full Value');
+  const [cargoValue, setCargoValue] = useState('');
+  const [additionalValue, setAdditionalValue] = useState('');
+  const [carrierInsurance, setCarrierInsurance] = useState('');
+  
+  // Quote state
+  const [quote, setQuote] = useState(null);
+  const [error, setError] = useState('');
+  
+  // Email state
   const [email, setEmail] = useState('');
-  const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [emailError, setEmailError] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
   
-  // Данные из БД
-  const [ratesData, setRatesData] = useState(null);
-  const [deductiblesData, setDeductiblesData] = useState(null);
-  const [categoriesList, setCategoriesList] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Data state - ОПТИМИЗАЦИЯ: загружаем данные только один раз
+  const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
+  const [rates, setRates] = useState(FALLBACK_RATES);
+  const [deductibles, setDeductibles] = useState(FALLBACK_DEDUCTIBLES);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  
+  // Popup state
+  const [showExcluded, setShowExcluded] = useState(false);
 
-  // Форматирование числа с разделителями
-  const formatNumberWithCommas = (value) => {
-    if (!value) return '';
-    const num = value.toString().replace(/[^0-9]/g, '');
-    return num.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  };
-
-  // Парсинг числа из строки с разделителями
-  const parseNumberFromDisplay = (value) => {
-    return value.replace(/[^0-9]/g, '');
-  };
-
-  // Обработчик изменения Cargo Value
-  const handleCargoValueChange = (e) => {
-    const rawValue = parseNumberFromDisplay(e.target.value);
-    setCargoValue(rawValue);
-    setCargoValueDisplay(formatNumberWithCommas(rawValue));
-    setErrors({...errors, cargoValue: null});
-  };
-
-  // Обработчик изменения Additional Value
-  const handleAdditionalValueChange = (e) => {
-    const rawValue = parseNumberFromDisplay(e.target.value);
-    setAdditionalValue(rawValue);
-    setAdditionalValueDisplay(formatNumberWithCommas(rawValue));
-    setErrors({...errors, additionalValue: null});
-  };
-
-  // Обработчик изменения Carrier Insurance
-  const handleCarrierInsuranceChange = (e) => {
-    const rawValue = parseNumberFromDisplay(e.target.value);
-    setCarrierInsurance(rawValue);
-    setCarrierInsuranceDisplay(formatNumberWithCommas(rawValue));
-    setErrors({...errors, carrierInsurance: null});
-  };
-
-  // Загрузка данных из Supabase
+  // ОПТИМИЗАЦИЯ: Загружаем данные только один раз при монтировании
   useEffect(() => {
+    let isMounted = true;
+
     async function loadData() {
       if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-        console.log('Supabase not configured, using fallback data');
-        setCategoriesList(FALLBACK_CATEGORIES);
-        setIsLoading(false);
+        setDataLoaded(true);
         return;
       }
 
       try {
-        const headers = {
-          'apikey': SUPABASE_ANON_KEY,
-          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-          'Content-Type': 'application/json'
-        };
+        const [categoriesRes, ratesRes, deductiblesRes] = await Promise.all([
+          fetch(`${SUPABASE_URL}/rest/v1/categories?select=name&order=name`, {
+            headers: { apikey: SUPABASE_ANON_KEY }
+          }),
+          fetch(`${SUPABASE_URL}/rest/v1/rates?select=*`, {
+            headers: { apikey: SUPABASE_ANON_KEY }
+          }),
+          fetch(`${SUPABASE_URL}/rest/v1/deductibles?select=*&order=min_value`, {
+            headers: { apikey: SUPABASE_ANON_KEY }
+          })
+        ]);
 
-        // Загружаем ставки
-        const ratesResponse = await fetch(
-          `${SUPABASE_URL}/rest/v1/rates_overview?is_active=eq.true`,
-          { headers }
-        );
-        
-        if (ratesResponse.ok) {
-          const rates = await ratesResponse.json();
-          const ratesMap = {};
-          rates.forEach(r => {
-            if (!ratesMap[r.transit_method]) ratesMap[r.transit_method] = {};
-            if (!ratesMap[r.transit_method][r.coverage_type]) ratesMap[r.transit_method][r.coverage_type] = {};
-            
-            const coverageForKey = r.coverage_for === 'Full Value' ? 'fullValue' : 'additional';
-            ratesMap[r.transit_method][r.coverage_type][coverageForKey] = r.rate;
-            ratesMap[r.transit_method][r.coverage_type].minimum = r.minimum_premium;
-          });
-          setRatesData(ratesMap);
-        }
+        if (!isMounted) return;
 
-        // Загружаем deductibles
-        const deductiblesResponse = await fetch(
-          `${SUPABASE_URL}/rest/v1/deductible_tiers?is_active=eq.true&order=display_order`,
-          { headers }
-        );
-        
-        if (deductiblesResponse.ok) {
-          const deductibles = await deductiblesResponse.json();
-          setDeductiblesData(deductibles.map(d => ({
-            min: d.min_cargo_value,
-            max: d.max_cargo_value || Infinity,
-            deductible: d.requires_quote ? 'quote' : d.deductible_amount
-          })));
-        }
-
-        // Загружаем категории товаров
-        const categoriesResponse = await fetch(
-          `${SUPABASE_URL}/rest/v1/goods_categories?is_active=eq.true&order=display_order`,
-          { headers }
-        );
-        
-        if (categoriesResponse.ok) {
-          const categories = await categoriesResponse.json();
-          if (categories.length > 0) {
-            setCategoriesList(categories.map(c => c.name));
-          } else {
-            setCategoriesList(FALLBACK_CATEGORIES);
+        if (categoriesRes.ok) {
+          const data = await categoriesRes.json();
+          if (data.length > 0) {
+            setCategories(data.map(c => c.name));
           }
-        } else {
-          setCategoriesList(FALLBACK_CATEGORIES);
         }
 
-      } catch (error) {
-        console.error('Error loading data from Supabase:', error);
-        setCategoriesList(FALLBACK_CATEGORIES);
+        if (ratesRes.ok) {
+          const data = await ratesRes.json();
+          if (data.length > 0) {
+            const ratesObj = {};
+            data.forEach(r => {
+              if (!ratesObj[r.transit_method]) ratesObj[r.transit_method] = {};
+              if (!ratesObj[r.transit_method][r.coverage_type]) {
+                ratesObj[r.transit_method][r.coverage_type] = {};
+              }
+              ratesObj[r.transit_method][r.coverage_type].additional = r.additional_rate;
+              ratesObj[r.transit_method][r.coverage_type].fullValue = r.full_value_rate;
+              ratesObj[r.transit_method][r.coverage_type].minimum = r.minimum_premium;
+            });
+            setRates(ratesObj);
+          }
+        }
+
+        if (deductiblesRes.ok) {
+          const data = await deductiblesRes.json();
+          if (data.length > 0) {
+            setDeductibles(data.map(d => ({
+              min: d.min_value,
+              max: d.max_value,
+              deductible: d.deductible_amount === -1 ? 'quote' : d.deductible_amount
+            })));
+          }
+        }
+
+      } catch (err) {
+        console.error('Error loading data:', err);
+      } finally {
+        if (isMounted) {
+          setDataLoaded(true);
+        }
       }
-      
-      setIsLoading(false);
     }
 
     loadData();
-  }, []);
 
-  // Используем данные из БД или fallback
-  const rates = ratesData || FALLBACK_RATES;
-  const deductibles = deductiblesData || FALLBACK_DEDUCTIBLES;
-  const categories = categoriesList.length > 0 ? categoriesList : FALLBACK_CATEGORIES;
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Пустой массив зависимостей - загружаем только один раз
 
-  // Auto-calculate cargo value when additional coverage is selected
-  useEffect(() => {
+  // ОПТИМИЗАЦИЯ: Мемоизируем функцию расчета
+  const calculateQuote = useCallback(() => {
+    setError('');
+    const value = parseFloat(cargoValue);
+
+    if (!value || value <= 0) {
+      setError('Please enter a valid cargo value');
+      return;
+    }
+
+    if (value > 15000000) {
+      setError('Maximum insurable value is $15,000,000');
+      return;
+    }
+
     if (coverageFor === 'Additional') {
-      const additional = parseFloat(additionalValue) || 0;
-      const carrier = parseFloat(carrierInsurance) || 0;
-      if (additional > 0 || carrier > 0) {
-        const total = (additional + carrier).toString();
-        setCargoValue(total);
-        setCargoValueDisplay(formatNumberWithCommas(total));
+      const addValue = parseFloat(additionalValue);
+      const carrierValue = parseFloat(carrierInsurance);
+      
+      if (!addValue || addValue <= 0) {
+        setError('Please enter additional value');
+        return;
+      }
+      if (!carrierValue || carrierValue < 0) {
+        setError('Please enter carrier insurance amount');
+        return;
+      }
+      if (carrierValue + addValue > value) {
+        setError('Total coverage cannot exceed cargo value');
+        return;
       }
     }
-  }, [additionalValue, carrierInsurance, coverageFor]);
 
-  const calculateDeductible = (value) => {
-    for (const tier of deductibles) {
-      if (value >= tier.min && value <= tier.max) {
-        return tier.deductible;
-      }
+    const rateConfig = rates[transitMethod]?.[coverageType];
+    if (!rateConfig) {
+      setError('Rate configuration not found');
+      return;
     }
-    return 'quote';
-  };
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', { 
-      style: 'currency', 
-      currency: 'USD', 
-      minimumFractionDigits: 0, 
-      maximumFractionDigits: 0 
-    }).format(amount);
-  };
+    let insuredAmount = value;
+    let calculatedPremium = 0;
 
-  const formatRate = (rate) => {
-    const percentage = rate * 100;
-    // Минимум 2 знака после запятой, убираем лишние нули
-    let formatted = percentage.toFixed(3);
-    // Убираем лишние нули в конце, но оставляем минимум 2 знака
-    while (formatted.endsWith('0') && formatted.split('.')[1].length > 2) {
-      formatted = formatted.slice(0, -1);
+    if (coverageFor === 'Full Value') {
+      const rate = rateConfig.fullValue;
+      calculatedPremium = value * rate;
+    } else {
+      insuredAmount = parseFloat(additionalValue);
+      const rate = rateConfig.additional;
+      calculatedPremium = insuredAmount * rate;
     }
-    return formatted + '%';
-  };
 
-  // Сохранение расчёта в БД
-  const saveQuoteToDatabase = async (quoteData) => {
+    const minPremium = rateConfig.minimum;
+    const finalPremium = Math.max(calculatedPremium, minPremium);
+
+    let deductibleAmount = 0;
+    if (coverageFor === 'Full Value') {
+      const deductibleConfig = deductibles.find(
+        d => value >= d.min && value <= d.max
+      );
+      deductibleAmount = deductibleConfig ? 
+        (deductibleConfig.deductible === 'quote' ? 'quote' : deductibleConfig.deductible) : 
+        0;
+    }
+
+    setQuote({
+      rate: coverageFor === 'Full Value' ? rateConfig.fullValue : rateConfig.additional,
+      premium: finalPremium,
+      deductible: deductibleAmount,
+      insuredAmount: insuredAmount
+    });
+    setStep('results');
+
+    // Сохраняем в Supabase асинхронно (не блокируем UI)
+    saveQuoteToSupabase({
+      category: category === 'Other' ? customCategory : category,
+      goodsDescription,
+      transitMethod,
+      coverageType,
+      coverageFor,
+      cargoValue: value,
+      additionalValue: coverageFor === 'Additional' ? parseFloat(additionalValue) : null,
+      carrierInsurance: coverageFor === 'Additional' ? parseFloat(carrierInsurance) : null,
+      rate: coverageFor === 'Full Value' ? rateConfig.fullValue : rateConfig.additional,
+      premium: finalPremium,
+      deductible: deductibleAmount,
+      insuredAmount
+    }).catch(err => console.error('Failed to save quote:', err));
+  }, [cargoValue, additionalValue, carrierInsurance, coverageFor, category, customCategory, goodsDescription, transitMethod, coverageType, rates, deductibles]);
+
+  // ОПТИМИЗАЦИЯ: Асинхронное сохранение в Supabase
+  const saveQuoteToSupabase = useCallback(async (quoteData) => {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return null;
 
     try {
@@ -499,109 +489,40 @@ export default function FreightInsuranceCalculator() {
           'Content-Type': 'application/json',
           'Prefer': 'return=representation'
         },
-        body: JSON.stringify(quoteData)
+        body: JSON.stringify({
+          category: quoteData.category,
+          goods_description: quoteData.goodsDescription,
+          transit_method: quoteData.transitMethod,
+          coverage_type: quoteData.coverageType,
+          coverage_for: quoteData.coverageFor,
+          cargo_value: quoteData.cargoValue,
+          additional_value: quoteData.additionalValue,
+          carrier_insurance: quoteData.carrierInsurance,
+          rate: quoteData.rate,
+          premium: quoteData.premium,
+          deductible: quoteData.deductible === 'quote' ? -1 : quoteData.deductible,
+          insured_amount: quoteData.insuredAmount,
+          email_sent: false
+        })
       });
 
       if (response.ok) {
         const data = await response.json();
         return data[0]?.id || null;
       }
-    } catch (error) {
-      console.error('Error saving quote:', error);
+    } catch (err) {
+      console.error('Supabase error:', err);
     }
     return null;
-  };
+  }, []);
 
-  const calculateQuote = async () => {
-    const newErrors = {};
-    if (!transitMethod) newErrors.transitMethod = 'Please select transit method';
-    if (!coverageType) newErrors.coverageType = 'Please select coverage type';
-    if (!coverageFor) newErrors.coverageFor = 'Please select coverage for';
-    
-    const cargo = parseFloat(cargoValue);
-    if (!cargoValue || isNaN(cargo) || cargo <= 0) {
-      newErrors.cargoValue = 'Please enter a valid cargo value';
-    }
-
-    if (coverageFor === 'Additional') {
-      const additional = parseFloat(additionalValue);
-      const carrier = parseFloat(carrierInsurance);
-      if (!additionalValue || isNaN(additional) || additional <= 0) {
-        newErrors.additionalValue = 'Please enter additional value';
-      }
-      if (!carrierInsurance || isNaN(carrier) || carrier < 0) {
-        newErrors.carrierInsurance = 'Please enter carrier insurance';
-      }
-      if (additional && carrier && Math.abs((additional + carrier) - cargo) > 0.01) {
-        newErrors.cargoValue = 'Cargo value must equal Additional Value + Carrier Insurance';
-      }
-    }
-
-    setErrors(newErrors);
-    if (Object.keys(newErrors).length > 0) return;
-
-    setIsCalculating(true);
-    setEmailSent(false);
-    setEmailError('');
-    setEmail('');
-    
-    // Simulate calculation delay
-    await new Promise(resolve => setTimeout(resolve, 600));
-
-    const transitRates = rates[transitMethod]?.[coverageType];
-    if (!transitRates) {
-      setErrors({ general: 'Rate not found for selected options' });
-      setIsCalculating(false);
-      return;
-    }
-    
-    const rate = coverageFor === 'Full Value' ? transitRates.fullValue : transitRates.additional;
-    const insuredAmount = coverageFor === 'Full Value' ? cargo : parseFloat(additionalValue);
-    
-    let premium = insuredAmount * rate;
-    premium = Math.max(premium, transitRates.minimum || 75);
-    
-    const deductible = coverageFor === 'Full Value' ? calculateDeductible(cargo) : 0;
-
-    const quoteResult = {
-      rate,
-      premium: Math.round(premium * 100) / 100,
-      deductible,
-      minimum: transitRates.minimum || 75,
-      insuredAmount,
-      needsQuote: deductible === 'quote'
-    };
-
-    setQuote(quoteResult);
-
-    // Сохраняем в БД
-    const savedId = await saveQuoteToDatabase({
-      category: category || null,
-      goods_description: goodsInsured || null,
-      transit_method: transitMethod,
-      coverage_type: coverageType,
-      coverage_for: coverageFor,
-      cargo_value: cargo,
-      additional_value: coverageFor === 'Additional' ? parseFloat(additionalValue) : null,
-      carrier_insurance: coverageFor === 'Additional' ? parseFloat(carrierInsurance) : null,
-      rate: rate,
-      premium: quoteResult.premium,
-      deductible: quoteResult.needsQuote ? null : deductible,
-      insured_amount: insuredAmount
-    });
-
-    setQuoteId(savedId);
-    setIsCalculating(false);
-  };
-
-  // Отправка email
-  const sendQuoteEmail = async () => {
+  // ОПТИМИЗАЦИЯ: Мемоизируем функцию отправки email
+  const sendQuoteEmail = useCallback(async () => {
     if (!email) {
       setEmailError('Please enter your email address');
       return;
     }
 
-    // Простая валидация email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       setEmailError('Please enter a valid email address');
@@ -612,16 +533,29 @@ export default function FreightInsuranceCalculator() {
     setEmailError('');
 
     try {
+      const quoteId = await saveQuoteToSupabase({
+        category: category === 'Other' ? customCategory : category,
+        goodsDescription,
+        transitMethod,
+        coverageType,
+        coverageFor,
+        cargoValue: parseFloat(cargoValue),
+        additionalValue: coverageFor === 'Additional' ? parseFloat(additionalValue) : null,
+        carrierInsurance: coverageFor === 'Additional' ? parseFloat(carrierInsurance) : null,
+        rate: quote.rate,
+        premium: quote.premium,
+        deductible: quote.deductible,
+        insuredAmount: quote.insuredAmount
+      });
+
       const response = await fetch('/api/send-quote', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email,
           quoteId,
-          category,
-          goodsDescription: goodsInsured,
+          category: category === 'Other' ? customCategory : category,
+          goodsDescription,
           transitMethod,
           coverageType,
           coverageFor,
@@ -635,54 +569,59 @@ export default function FreightInsuranceCalculator() {
         })
       });
 
-      const data = await response.json();
-
-      if (response.ok) {
-        setEmailSent(true);
-      } else {
-        setEmailError(data.error || 'Failed to send email. Please try again.');
+      if (!response.ok) {
+        throw new Error('Failed to send email');
       }
-    } catch (error) {
-      console.error('Error sending email:', error);
-      setEmailError('Failed to send email. Please try again.');
+
+      setEmailSent(true);
+    } catch (err) {
+      setEmailError('Failed to send quote. Please try again.');
+      console.error(err);
+    } finally {
+      setIsSendingEmail(false);
     }
+  }, [email, category, customCategory, goodsDescription, transitMethod, coverageType, coverageFor, cargoValue, additionalValue, carrierInsurance, quote, saveQuoteToSupabase]);
 
-    setIsSendingEmail(false);
-  };
+  // ОПТИМИЗАЦИЯ: Мемоизируем функции форматирования
+  const formatCurrency = useMemo(() => (amount) => {
+    return new Intl.NumberFormat('en-US', { 
+      style: 'currency', 
+      currency: 'USD', 
+      minimumFractionDigits: 0, 
+      maximumFractionDigits: 0 
+    }).format(amount);
+  }, []);
 
-  const resetForm = () => {
-    setCategory('');
-    setGoodsInsured('');
-    setTransitMethod('');
-    setCoverageType('');
-    setCoverageFor('');
-    setCargoValue('');
-    setCargoValueDisplay('');
-    setAdditionalValue('');
-    setAdditionalValueDisplay('');
-    setCarrierInsurance('');
-    setCarrierInsuranceDisplay('');
-    setQuote(null);
-    setQuoteId(null);
-    setErrors({});
-    setEmail('');
-    setEmailSent(false);
-    setEmailError('');
-  };
+  const formatRate = useMemo(() => (r) => {
+    const percentage = r * 100;
+    let formatted = percentage.toFixed(3);
+    while (formatted.endsWith('0') && formatted.split('.')[1].length > 2) {
+      formatted = formatted.slice(0, -1);
+    }
+    return formatted + '%';
+  }, []);
 
-  if (isLoading) {
+  // ОПТИМИЗАЦИЯ: Показываем индикатор загрузки только при первой загрузке
+  if (!dataLoaded) {
     return (
       <div style={{
         minHeight: '100vh',
-        background: 'linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontFamily: "'Segoe UI', system-ui, sans-serif",
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
       }}>
-        <div style={{ textAlign: 'center', color: '#1e293b' }}>
-          <div style={{ fontSize: '48px', marginBottom: '20px' }}>⏳</div>
-          <p>Loading calculator...</p>
+        <div style={{ textAlign: 'center', color: '#fff' }}>
+          <div style={{
+            width: '50px',
+            height: '50px',
+            border: '4px solid rgba(255,255,255,0.3)',
+            borderTopColor: '#fff',
+            borderRadius: '50%',
+            animation: 'spin 1s linear infinite',
+            margin: '0 auto 20px'
+          }}/>
+          <p style={{ fontSize: '18px', fontWeight: '500' }}>Loading calculator...</p>
         </div>
       </div>
     );
@@ -691,73 +630,87 @@ export default function FreightInsuranceCalculator() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%)',
-      fontFamily: "'Segoe UI', system-ui, sans-serif",
-      color: '#1e293b',
-      padding: '20px'
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      padding: '40px 20px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
     }}>
-      {/* Excluded Commodities Popup */}
       <ExcludedCommoditiesPopup isOpen={showExcluded} onClose={() => setShowExcluded(false)} />
 
-      {/* Header with FreightInsuranceDirect Logo */}
-      <div style={{
-        maxWidth: '900px',
-        margin: '0 auto 30px',
-        textAlign: 'center'
-      }}>
+      <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+        {/* Header */}
         <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '20px',
-          marginBottom: '10px',
-          flexWrap: 'wrap'
+          textAlign: 'center',
+          marginBottom: '40px',
+          animation: 'fadeIn 0.6s ease-out'
         }}>
-          {/* Main Logo */}
+          {/* ОПТИМИЗАЦИЯ: lazy loading для изображений */}
           <img 
             src="/logo-main.png" 
-            alt="FreightInsuranceDirect - Ramon Inc. Since 1982"
-            style={{ height: '70px' }}
+            alt="FreightInsuranceDirect" 
+            loading="lazy"
+            style={{ 
+              maxWidth: '400px', 
+              width: '100%', 
+              height: 'auto', 
+              marginBottom: '15px' 
+            }} 
           />
-          
-          {/* Trusted Badge */}
-          <img 
-            src="/badge-trusted.png" 
-            alt="Trusted Since 1982"
-            style={{ height: '60px' }}
-          />
-        </div>
-        
-        <h2 style={{
-          fontSize: '32px',
-          fontWeight: '600',
-          margin: '25px 0 10px',
-          color: '#1e3a5f'
-        }}>Cargo Insurance Calculator</h2>
-        <p style={{ color: '#64748b', margin: 0 }}>Get an instant quote for your freight insurance needs</p>
-      </div>
-
-      {/* Main Calculator */}
-      <div style={{
-        maxWidth: '900px',
-        margin: '0 auto',
-        background: '#ffffff',
-        borderRadius: '20px',
-        border: '1px solid #e2e8f0',
-        overflow: 'hidden',
-        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
-      }}>
-        {/* Form Section */}
-        <div style={{ padding: '40px' }}>
           <div style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-            gap: '24px'
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '15px',
+            background: 'rgba(255, 255, 255, 0.15)',
+            padding: '12px 24px',
+            borderRadius: '50px',
+            backdropFilter: 'blur(10px)',
+            border: '1px solid rgba(255, 255, 255, 0.2)'
           }}>
-            {/* Category of Goods */}
-            <div>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                Category of Goods
+            <img 
+              src="/badge-trusted.png" 
+              alt="Trusted Since 1982" 
+              loading="lazy"
+              style={{ height: '50px', width: 'auto' }} 
+            />
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ color: '#fff', fontSize: '22px', fontWeight: '700' }}>
+                Cargo Insurance Calculator
+              </div>
+              <div style={{ color: 'rgba(255, 255, 255, 0.9)', fontSize: '14px' }}>
+                Get instant quotes • Up to $15M coverage
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Card */}
+        {step === 'form' && (
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '20px',
+            padding: '40px',
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+            animation: 'fadeIn 0.6s ease-out'
+          }}>
+            <h2 style={{
+              margin: '0 0 30px',
+              color: '#1e293b',
+              fontSize: '28px',
+              fontWeight: '700',
+              textAlign: 'center'
+            }}>
+              Calculate Your Premium
+            </h2>
+
+            {/* Category Selection */}
+            <div style={{ marginBottom: '25px' }}>
+              <label style={{
+                display: 'block',
+                marginBottom: '8px',
+                color: '#475569',
+                fontWeight: '600',
+                fontSize: '15px'
+              }}>
+                Category *
               </label>
               <select
                 value={category}
@@ -767,108 +720,144 @@ export default function FreightInsuranceCalculator() {
                   padding: '14px 16px',
                   background: '#f8fafc',
                   border: '1px solid #e2e8f0',
-                  borderRadius: '12px',
+                  borderRadius: '10px',
                   color: '#1e293b',
                   fontSize: '15px',
-                  cursor: 'pointer',
-                  outline: 'none'
+                  outline: 'none',
+                  cursor: 'pointer'
                 }}
               >
-                <option value="">Select category...</option>
+                <option value="">Select a category</option>
                 {categories.map(cat => (
                   <option key={cat} value={cat}>{cat}</option>
                 ))}
+                <option value="Other">Other (specify below)</option>
               </select>
             </div>
 
-            {/* Goods Insured */}
-            <div>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                Goods Insured
+            {category === 'Other' && (
+              <div style={{ marginBottom: '25px' }}>
+                <label style={{
+                  display: 'block',
+                  marginBottom: '8px',
+                  color: '#475569',
+                  fontWeight: '600',
+                  fontSize: '15px'
+                }}>
+                  Specify Category *
+                </label>
+                <input
+                  type="text"
+                  value={customCategory}
+                  onChange={(e) => setCustomCategory(e.target.value)}
+                  placeholder="Enter category name"
+                  style={{
+                    width: '100%',
+                    padding: '14px 16px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '10px',
+                    color: '#1e293b',
+                    fontSize: '15px',
+                    outline: 'none'
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Goods Description */}
+            <div style={{ marginBottom: '25px' }}>
+              <label style={{
+                display: 'block',
+                marginBottom: '8px',
+                color: '#475569',
+                fontWeight: '600',
+                fontSize: '15px'
+              }}>
+                Goods Description (Optional)
               </label>
               <input
                 type="text"
-                value={goodsInsured}
-                onChange={(e) => setGoodsInsured(e.target.value)}
-                placeholder="Describe your goods..."
+                value={goodsDescription}
+                onChange={(e) => setGoodsDescription(e.target.value)}
+                placeholder="e.g., Steel pipes, Electronics"
                 style={{
                   width: '100%',
                   padding: '14px 16px',
                   background: '#f8fafc',
                   border: '1px solid #e2e8f0',
-                  borderRadius: '12px',
+                  borderRadius: '10px',
                   color: '#1e293b',
                   fontSize: '15px',
-                  outline: 'none',
-                  boxSizing: 'border-box'
+                  outline: 'none'
                 }}
               />
             </div>
 
             {/* Transit Method */}
-            <div>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            <div style={{ marginBottom: '25px' }}>
+              <label style={{
+                display: 'block',
+                marginBottom: '8px',
+                color: '#475569',
+                fontWeight: '600',
+                fontSize: '15px'
+              }}>
                 Transit Method *
               </label>
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 {['Land', 'Air', 'Ocean'].map(method => (
                   <button
                     key={method}
-                    onClick={() => { setTransitMethod(method); setErrors({...errors, transitMethod: null}); }}
+                    onClick={() => setTransitMethod(method)}
                     style={{
-                      flex: 1,
-                      padding: '14px',
+                      flex: '1 1 120px',
+                      padding: '14px 20px',
                       background: transitMethod === method 
-                        ? 'linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%)'
+                        ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
                         : '#f8fafc',
-                      border: transitMethod === method 
-                        ? 'none'
-                        : `1px solid ${errors.transitMethod ? '#ef4444' : '#e2e8f0'}`,
-                      borderRadius: '12px',
-                      color: transitMethod === method ? '#fff' : '#1e293b',
-                      fontSize: '14px',
-                      fontWeight: '500',
+                      border: `2px solid ${transitMethod === method ? '#667eea' : '#e2e8f0'}`,
+                      borderRadius: '10px',
+                      color: transitMethod === method ? '#fff' : '#64748b',
+                      fontSize: '15px',
+                      fontWeight: '600',
                       cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      gap: '6px'
+                      transition: 'all 0.2s'
                     }}
                   >
-                    <span style={{ fontSize: '20px' }}>
-                      {method === 'Land' ? '🚛' : method === 'Air' ? '✈️' : '🚢'}
-                    </span>
                     {method}
                   </button>
                 ))}
               </div>
-              {errors.transitMethod && <p style={{ color: '#ef4444', fontSize: '12px', margin: '6px 0 0' }}>{errors.transitMethod}</p>}
             </div>
 
             {/* Coverage Type */}
-            <div>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            <div style={{ marginBottom: '25px' }}>
+              <label style={{
+                display: 'block',
+                marginBottom: '8px',
+                color: '#475569',
+                fontWeight: '600',
+                fontSize: '15px'
+              }}>
                 Coverage Type *
               </label>
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 {['All Risk', 'Total Loss'].map(type => (
                   <button
                     key={type}
-                    onClick={() => { setCoverageType(type); setErrors({...errors, coverageType: null}); }}
+                    onClick={() => setCoverageType(type)}
                     style={{
-                      flex: 1,
+                      flex: '1 1 140px',
                       padding: '14px 20px',
                       background: coverageType === type 
-                        ? 'linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%)'
+                        ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
                         : '#f8fafc',
-                      border: coverageType === type 
-                        ? 'none'
-                        : `1px solid ${errors.coverageType ? '#ef4444' : '#e2e8f0'}`,
-                      borderRadius: '12px',
-                      color: coverageType === type ? '#fff' : '#1e293b',
-                      fontSize: '14px',
-                      fontWeight: '500',
+                      border: `2px solid ${coverageType === type ? '#667eea' : '#e2e8f0'}`,
+                      borderRadius: '10px',
+                      color: coverageType === type ? '#fff' : '#64748b',
+                      fontSize: '15px',
+                      fontWeight: '600',
                       cursor: 'pointer',
                       transition: 'all 0.2s'
                     }}
@@ -877,61 +866,57 @@ export default function FreightInsuranceCalculator() {
                   </button>
                 ))}
               </div>
-              {errors.coverageType && <p style={{ color: '#ef4444', fontSize: '12px', margin: '6px 0 0' }}>{errors.coverageType}</p>}
             </div>
 
             {/* Coverage For */}
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            <div style={{ marginBottom: '25px' }}>
+              <label style={{
+                display: 'block',
+                marginBottom: '8px',
+                color: '#475569',
+                fontWeight: '600',
+                fontSize: '15px'
+              }}>
                 Coverage For *
               </label>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 {['Full Value', 'Additional'].map(type => (
                   <button
                     key={type}
-                    onClick={() => { 
-                      setCoverageFor(type); 
-                      setErrors({...errors, coverageFor: null});
-                      if (type === 'Full Value') {
-                        setAdditionalValue('');
-                        setAdditionalValueDisplay('');
-                        setCarrierInsurance('');
-                        setCarrierInsuranceDisplay('');
-                      }
-                    }}
+                    onClick={() => setCoverageFor(type)}
                     style={{
-                      padding: '16px 20px',
+                      flex: '1 1 140px',
+                      padding: '14px 20px',
                       background: coverageFor === type 
-                        ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+                        ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
                         : '#f8fafc',
-                      border: coverageFor === type 
-                        ? 'none'
-                        : `1px solid ${errors.coverageFor ? '#ef4444' : '#e2e8f0'}`,
-                      borderRadius: '12px',
-                      color: coverageFor === type ? '#fff' : '#1e293b',
-                      fontSize: '14px',
-                      fontWeight: '500',
+                      border: `2px solid ${coverageFor === type ? '#667eea' : '#e2e8f0'}`,
+                      borderRadius: '10px',
+                      color: coverageFor === type ? '#fff' : '#64748b',
+                      fontSize: '15px',
+                      fontWeight: '600',
                       cursor: 'pointer',
-                      transition: 'all 0.2s',
-                      textAlign: 'left'
+                      transition: 'all 0.2s'
                     }}
                   >
-                    <div style={{ fontWeight: '600', marginBottom: '4px' }}>{type}</div>
-                    <div style={{ fontSize: '12px', opacity: 0.8 }}>
-                      {type === 'Full Value' ? 'Insure entire cargo value' : 'Top-up existing carrier insurance'}
-                    </div>
+                    {type}
                   </button>
                 ))}
               </div>
-              {errors.coverageFor && <p style={{ color: '#ef4444', fontSize: '12px', margin: '6px 0 0' }}>{errors.coverageFor}</p>}
             </div>
 
             {/* Cargo Value */}
-            <div style={{ gridColumn: coverageFor === 'Additional' ? 'auto' : '1 / -1' }}>
-              <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                Cargo Value (USD) *
+            <div style={{ marginBottom: '25px' }}>
+              <label style={{
+                display: 'block',
+                marginBottom: '8px',
+                color: '#475569',
+                fontWeight: '600',
+                fontSize: '15px'
+              }}>
+                Cargo Value * {coverageFor === 'Additional' ? '(Invoice Value)' : ''}
               </label>
-              <div style={{ position: 'relative', maxWidth: coverageFor === 'Additional' ? '100%' : '400px' }}>
+              <div style={{ position: 'relative' }}>
                 <span style={{
                   position: 'absolute',
                   left: '16px',
@@ -942,34 +927,36 @@ export default function FreightInsuranceCalculator() {
                   fontWeight: '600'
                 }}>$</span>
                 <input
-                  type="text"
-                  value={cargoValueDisplay}
-                  onChange={handleCargoValueChange}
+                  type="number"
+                  value={cargoValue}
+                  onChange={(e) => setCargoValue(e.target.value)}
                   placeholder="0"
-                  readOnly={coverageFor === 'Additional'}
                   style={{
                     width: '100%',
-                    padding: '16px 16px 16px 36px',
-                    background: coverageFor === 'Additional' ? '#f1f5f9' : '#f8fafc',
-                    border: `1px solid ${errors.cargoValue ? '#ef4444' : '#e2e8f0'}`,
-                    borderRadius: '12px',
+                    padding: '14px 16px 14px 32px',
+                    background: '#f8fafc',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: '10px',
                     color: '#1e293b',
-                    fontSize: '20px',
-                    fontWeight: '700',
-                    outline: 'none',
-                    boxSizing: 'border-box'
+                    fontSize: '15px',
+                    outline: 'none'
                   }}
                 />
               </div>
-              {errors.cargoValue && <p style={{ color: '#ef4444', fontSize: '12px', margin: '6px 0 0' }}>{errors.cargoValue}</p>}
             </div>
 
-            {/* Additional Coverage Fields */}
+            {/* Additional Fields for "Additional" Coverage */}
             {coverageFor === 'Additional' && (
               <>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                    Additional Value (USD) *
+                <div style={{ marginBottom: '25px' }}>
+                  <label style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    color: '#475569',
+                    fontWeight: '600',
+                    fontSize: '15px'
+                  }}>
+                    Additional Value to Insure *
                   </label>
                   <div style={{ position: 'relative' }}>
                     <span style={{
@@ -978,32 +965,37 @@ export default function FreightInsuranceCalculator() {
                       top: '50%',
                       transform: 'translateY(-50%)',
                       color: '#64748b',
-                      fontSize: '16px'
+                      fontSize: '18px',
+                      fontWeight: '600'
                     }}>$</span>
                     <input
-                      type="text"
-                      value={additionalValueDisplay}
-                      onChange={handleAdditionalValueChange}
+                      type="number"
+                      value={additionalValue}
+                      onChange={(e) => setAdditionalValue(e.target.value)}
                       placeholder="0"
                       style={{
                         width: '100%',
                         padding: '14px 16px 14px 32px',
                         background: '#f8fafc',
-                        border: `1px solid ${errors.additionalValue ? '#ef4444' : '#e2e8f0'}`,
-                        borderRadius: '12px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '10px',
                         color: '#1e293b',
-                        fontSize: '16px',
-                        outline: 'none',
-                        boxSizing: 'border-box'
+                        fontSize: '15px',
+                        outline: 'none'
                       }}
                     />
                   </div>
-                  {errors.additionalValue && <p style={{ color: '#ef4444', fontSize: '12px', margin: '6px 0 0' }}>{errors.additionalValue}</p>}
                 </div>
 
-                <div>
-                  <label style={{ display: 'block', marginBottom: '8px', color: '#64748b', fontSize: '13px', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                    Carrier&apos;s Insurance (USD) *
+                <div style={{ marginBottom: '25px' }}>
+                  <label style={{
+                    display: 'block',
+                    marginBottom: '8px',
+                    color: '#475569',
+                    fontWeight: '600',
+                    fontSize: '15px'
+                  }}>
+                    Carrier Insurance Amount *
                   </label>
                   <div style={{ position: 'relative' }}>
                     <span style={{
@@ -1012,168 +1004,150 @@ export default function FreightInsuranceCalculator() {
                       top: '50%',
                       transform: 'translateY(-50%)',
                       color: '#64748b',
-                      fontSize: '16px'
+                      fontSize: '18px',
+                      fontWeight: '600'
                     }}>$</span>
                     <input
-                      type="text"
-                      value={carrierInsuranceDisplay}
-                      onChange={handleCarrierInsuranceChange}
+                      type="number"
+                      value={carrierInsurance}
+                      onChange={(e) => setCarrierInsurance(e.target.value)}
                       placeholder="0"
                       style={{
                         width: '100%',
                         padding: '14px 16px 14px 32px',
                         background: '#f8fafc',
-                        border: `1px solid ${errors.carrierInsurance ? '#ef4444' : '#e2e8f0'}`,
-                        borderRadius: '12px',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '10px',
                         color: '#1e293b',
-                        fontSize: '16px',
-                        outline: 'none',
-                        boxSizing: 'border-box'
+                        fontSize: '15px',
+                        outline: 'none'
                       }}
                     />
                   </div>
-                  {errors.carrierInsurance && <p style={{ color: '#ef4444', fontSize: '12px', margin: '6px 0 0' }}>{errors.carrierInsurance}</p>}
                 </div>
               </>
             )}
-          </div>
 
-          {/* Calculate Button */}
-          <div style={{ marginTop: '30px', display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+            {error && (
+              <div style={{
+                padding: '12px 16px',
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '10px',
+                color: '#dc2626',
+                fontSize: '14px',
+                marginBottom: '25px'
+              }}>
+                {error}
+              </div>
+            )}
+
             <button
               onClick={calculateQuote}
-              disabled={isCalculating}
               style={{
-                flex: '2 1 200px',
-                padding: '18px 40px',
-                background: isCalculating 
-                  ? '#fdba74'
-                  : 'linear-gradient(135deg, #ea580c 0%, #f97316 100%)',
+                width: '100%',
+                padding: '18px',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                 border: 'none',
                 borderRadius: '12px',
                 color: '#fff',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: isCalculating ? 'wait' : 'pointer',
-                transition: 'all 0.3s',
-                boxShadow: '0 4px 14px rgba(234, 88, 12, 0.4)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px'
-              }}
-            >
-              {isCalculating ? (
-                <>
-                  <span style={{
-                    width: '20px',
-                    height: '20px',
-                    border: '2px solid rgba(255,255,255,0.3)',
-                    borderTopColor: '#fff',
-                    borderRadius: '50%',
-                    animation: 'spin 1s linear infinite'
-                  }}/>
-                  Calculating...
-                </>
-              ) : (
-                <>Calculate Quote</>
-              )}
-            </button>
-            <button
-              onClick={resetForm}
-              style={{
-                flex: '1 1 100px',
-                padding: '18px 30px',
-                background: '#f8fafc',
-                border: '1px solid #e2e8f0',
-                borderRadius: '12px',
-                color: '#64748b',
-                fontSize: '16px',
-                fontWeight: '500',
+                fontSize: '18px',
+                fontWeight: '700',
                 cursor: 'pointer',
-                transition: 'all 0.2s'
+                boxShadow: '0 10px 30px rgba(102, 126, 234, 0.4)',
+                transition: 'all 0.3s'
               }}
             >
-              Reset
+              Calculate Premium
             </button>
           </div>
-        </div>
+        )}
 
-        {/* Quote Result */}
-        {quote && (
+        {/* Results */}
+        {step === 'results' && quote && (
           <div style={{
-            background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfeff 100%)',
-            borderTop: '1px solid #bbf7d0',
+            background: '#ffffff',
+            borderRadius: '20px',
             padding: '40px',
-            animation: 'fadeIn 0.5s ease'
+            boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)',
+            animation: 'fadeIn 0.6s ease-out'
           }}>
-            {quote.needsQuote ? (
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '48px', marginBottom: '15px' }}>📋</div>
-                <h3 style={{ fontSize: '24px', color: '#d97706', margin: '0 0 10px' }}>Custom Quote Required</h3>
-                <p style={{ color: '#64748b', margin: '0 0 20px' }}>
-                  For cargo values over $500,000, please contact us for a personalized quote.
+            <button
+              onClick={() => { setStep('form'); setQuote(null); setError(''); setEmail(''); setEmailSent(false); setEmailError(''); }}
+              style={{
+                background: '#f1f5f9',
+                border: 'none',
+                borderRadius: '10px',
+                padding: '10px 20px',
+                color: '#64748b',
+                fontSize: '14px',
+                fontWeight: '600',
+                cursor: 'pointer',
+                marginBottom: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              ← Back
+            </button>
+
+            <h2 style={{
+              margin: '0 0 30px',
+              color: '#1e293b',
+              fontSize: '28px',
+              fontWeight: '700',
+              textAlign: 'center'
+            }}>
+              Your Quote
+            </h2>
+
+            {quote.deductible === 'quote' ? (
+              <div style={{
+                background: '#fef3c7',
+                border: '1px solid #fcd34d',
+                borderRadius: '12px',
+                padding: '20px',
+                marginBottom: '25px'
+              }}>
+                <p style={{ margin: 0, color: '#92400e', fontSize: '15px', lineHeight: '1.6' }}>
+                  <strong>Note:</strong> For cargo values above $500,000, a custom quote is required. Please contact us at <strong>888-441-4435</strong> for personalized pricing.
                 </p>
-                <a
-                  href="https://ramonins-usa.com/contact-us/"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    display: 'inline-block',
-                    padding: '14px 30px',
-                    background: 'linear-gradient(135deg, #ea580c 0%, #f97316 100%)',
-                    borderRadius: '10px',
-                    color: '#fff',
-                    textDecoration: 'none',
-                    fontWeight: '600'
-                  }}
-                >
-                  Request a Quote
-                </a>
               </div>
             ) : (
               <>
-                <h3 style={{ fontSize: '20px', color: '#059669', margin: '0 0 25px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ fontSize: '28px' }}>✓</span> Your Quote
-                </h3>
-                
                 <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
-                  gap: '20px',
-                  marginBottom: '30px'
+                  background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfeff 100%)',
+                  borderRadius: '16px',
+                  padding: '30px',
+                  marginBottom: '25px',
+                  border: '1px solid #a7f3d0'
                 }}>
-                  <div style={{
-                    background: '#ffffff',
-                    borderRadius: '16px',
-                    padding: '20px',
-                    textAlign: 'center',
-                    border: '1px solid #e2e8f0'
-                  }}>
-                    <div style={{ color: '#64748b', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Rate</div>
-                    <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>{formatRate(quote.rate)}</div>
+                  <div style={{ marginBottom: '20px' }}>
+                    <div style={{ fontSize: '14px', color: '#059669', fontWeight: '600', marginBottom: '5px' }}>
+                      RATE
+                    </div>
+                    <div style={{ fontSize: '32px', fontWeight: '700', color: '#1e293b' }}>{formatRate(quote.rate)}</div>
                   </div>
-                  
+
                   <div style={{
-                    background: 'linear-gradient(135deg, #dcfce7 0%, #d1fae5 100%)',
-                    borderRadius: '16px',
-                    padding: '20px',
-                    textAlign: 'center',
-                    border: '1px solid #86efac'
-                  }}>
-                    <div style={{ color: '#059669', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Premium</div>
-                    <div style={{ fontSize: '32px', fontWeight: '700', color: '#059669' }}>{formatCurrency(quote.premium)}</div>
+                    height: '1px',
+                    background: 'rgba(5, 150, 105, 0.2)',
+                    margin: '20px 0'
+                  }} />
+
+                  <div>
+                    <div style={{ fontSize: '14px', color: '#059669', fontWeight: '600', marginBottom: '5px' }}>
+                      PREMIUM
+                    </div>
+                    <div style={{ fontSize: '42px', fontWeight: '700', color: '#059669' }}>{formatCurrency(quote.premium)}</div>
                   </div>
-                  
-                  {coverageFor === 'Full Value' && (
-                    <div style={{
-                      background: '#ffffff',
-                      borderRadius: '16px',
-                      padding: '20px',
-                      textAlign: 'center',
-                      border: '1px solid #e2e8f0'
-                    }}>
-                      <div style={{ color: '#64748b', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>Deductible</div>
+
+                  {coverageFor === 'Full Value' && quote.deductible !== 'quote' && (
+                    <div style={{ marginTop: '20px' }}>
+                      <div style={{ fontSize: '14px', color: '#0891b2', fontWeight: '600', marginBottom: '5px' }}>
+                        DEDUCTIBLE
+                      </div>
                       <div style={{ fontSize: '28px', fontWeight: '700', color: '#1e293b' }}>{formatCurrency(quote.deductible)}</div>
                     </div>
                   )}
@@ -1331,7 +1305,9 @@ export default function FreightInsuranceCalculator() {
         <div style={{
           padding: '20px 40px',
           borderTop: '1px solid #e2e8f0',
-          background: '#f8fafc'
+          background: '#f8fafc',
+          borderRadius: '0 0 20px 20px',
+          marginTop: step === 'results' ? '20px' : '0'
         }}>
           <p style={{
             margin: 0,
@@ -1349,23 +1325,24 @@ export default function FreightInsuranceCalculator() {
         maxWidth: '900px',
         margin: '30px auto 0',
         textAlign: 'center',
-        color: '#64748b',
+        color: '#fff',
         fontSize: '13px'
       }}>
-        <p style={{ margin: '0 0 10px' }}>© 2024 Ramon Inc. All rights reserved.</p>
+        <p style={{ margin: '0 0 10px', opacity: 0.9 }}>© 2024 Ramon Inc. All rights reserved.</p>
         <div style={{ display: 'flex', justifyContent: 'center', gap: '20px', flexWrap: 'wrap' }}>
-          <a href="https://ramonins-usa.com" target="_blank" rel="noopener noreferrer" style={{ color: '#1e3a5f', textDecoration: 'none' }}>Website</a>
-          <a href="https://ramonins-usa.com/contact-us/" target="_blank" rel="noopener noreferrer" style={{ color: '#1e3a5f', textDecoration: 'none' }}>Contact Us</a>
+          <a href="https://ramonins-usa.com" target="_blank" rel="noopener noreferrer" style={{ color: '#fff', textDecoration: 'none', opacity: 0.9 }}>Website</a>
+          <a href="https://ramonins-usa.com/contact-us/" target="_blank" rel="noopener noreferrer" style={{ color: '#fff', textDecoration: 'none', opacity: 0.9 }}>Contact Us</a>
           <button 
             onClick={() => setShowExcluded(true)}
             style={{ 
-              color: '#1e3a5f', 
+              color: '#fff', 
               textDecoration: 'none',
               background: 'none',
               border: 'none',
               cursor: 'pointer',
               fontSize: '13px',
-              padding: 0
+              padding: 0,
+              opacity: 0.9
             }}
           >
             Excluded Goods
